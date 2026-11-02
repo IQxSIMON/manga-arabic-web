@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from urllib.parse import urlparse, urljoin
 
 import requests
@@ -98,18 +99,45 @@ def translate_text(text, chapter_title="", page_index=None):
         "contents": [{"role": "user", "parts": [{"text": context + "\n\nالنص المستخرج من الصفحة:\n" + text[:12000]}]}],
         "generationConfig": {"temperature": 0.35, "topP": 0.9, "maxOutputTokens": 4096}
     }
-    response = HTTP.post(
-        endpoint,
-        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-        json=payload,
-        timeout=60
-    )
+    # Gemini may temporarily return 429/5xx when its service is busy.
+    # Retry only transient failures; do not retry invalid keys or bad requests.
+    retryable_statuses = {408, 429, 500, 502, 503, 504}
+    response = None
+    last_network_error = None
+    for attempt in range(4):
+        try:
+            response = HTTP.post(
+                endpoint,
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json=payload,
+                timeout=60
+            )
+            if response.status_code not in retryable_statuses:
+                break
+            if attempt < 3:
+                time.sleep(2 ** attempt)  # 1, 2, then 4 seconds
+        except requests.RequestException as exc:
+            last_network_error = exc
+            if attempt == 3:
+                raise RuntimeError(f"تعذر الاتصال بخدمة Gemini بعد 4 محاولات: {exc}") from exc
+            time.sleep(2 ** attempt)
+
+    if last_network_error and response is None:
+        raise RuntimeError(f"تعذر الاتصال بخدمة Gemini: {last_network_error}")
+    if response is None:
+        raise RuntimeError("لم تصل استجابة من Gemini.")
+
     if response.status_code >= 400:
         try:
             detail = response.json().get("error", {}).get("message", response.text)
         except ValueError:
             detail = response.text
-        raise RuntimeError(f"Gemini API: {detail[:500]}")
+        if response.status_code in retryable_statuses:
+            raise RuntimeError(
+                f"Gemini ما زال مزدحماً بعد 4 محاولات (HTTP {response.status_code}). "
+                f"أعد معالجة هذه الصفحة لاحقاً. التفاصيل: {detail[:350]}"
+            )
+        raise RuntimeError(f"Gemini API (HTTP {response.status_code}): {detail[:500]}")
     data = response.json()
     candidates = data.get("candidates") or []
     parts = (candidates[0].get("content", {}).get("parts", []) if candidates else [])
