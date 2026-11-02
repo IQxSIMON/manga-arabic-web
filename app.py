@@ -7,6 +7,7 @@ from urllib.parse import urlparse, urljoin
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, render_template, request, Response
+from google_vision_ocr import extract_google_vision
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -70,6 +71,40 @@ def get_chapter():
                        pages=[{"index": i + 1, "image": image} for i, image in enumerate(images)])
     except requests.RequestException as exc:
         return jsonify(error=f"تعذر جلب الفصل: {exc}"), 502
+
+
+def run_ocr_space(image_bytes, content_type, api_key):
+    extension = "png" if "png" in content_type else "webp" if "webp" in content_type else "jpg"
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = HTTP.post("https://api.ocr.space/parse/image",
+                data={"apikey": api_key, "language": "eng", "isOverlayRequired": "true"},
+                files={"file": (f"manga-page.{extension}", image_bytes, content_type)}, timeout=(20, 120))
+            response.raise_for_status()
+            payload = response.json()
+            if payload.get("IsErroredOnProcessing"):
+                raise RuntimeError(str(payload.get("ErrorMessage") or "OCR.space processing failed"))
+            results = payload.get("ParsedResults") or []
+            extracted = "\n".join(item.get("ParsedText", "") for item in results).strip()
+            if not extracted: raise RuntimeError("OCR.space لم يتمكن من قراءة نص واضح.")
+            lines = []
+            for result in results:
+                for line in (result.get("TextOverlay") or {}).get("Lines") or []:
+                    words = line.get("Words") or []
+                    if not words: continue
+                    left = min(float(w.get("Left", 0)) for w in words)
+                    top = min(float(w.get("Top", 0)) for w in words)
+                    right = max(float(w.get("Left", 0)) + float(w.get("Width", 0)) for w in words)
+                    bottom = max(float(w.get("Top", 0)) + float(w.get("Height", 0)) for w in words)
+                    text = " ".join(str(w.get("WordText", "")) for w in words).strip()
+                    if text and right > left and bottom > top:
+                        lines.append({"text": text, "left": round(left,2), "top": round(top,2), "width": round(right-left,2), "height": round(bottom-top,2)})
+            return extracted, lines
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
+            last_error = exc
+            if attempt < 2: time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"OCR.space فشل بعد 3 محاولات: {last_error}")
 
 
 def translate_text(text, chapter_title="", page_index=None, line_mode=False):
@@ -181,12 +216,8 @@ def translate_page():
     if parsed.scheme != "https" or not parsed.netloc or ref_parsed.hostname not in CHAPTER_HOSTS:
         return jsonify(error="رابط الصورة أو مرجع الفصل غير صالح."), 400
 
-    api_key = os.getenv("OCR_SPACE_API_KEY")
-    if not api_key:
-        return jsonify(error="مفتاح OCR غير مضبوط. أضف OCR_SPACE_API_KEY إلى متغيرات البيئة في الاستضافة."), 503
-
     try:
-        # Download the image with the chapter Referer, then upload its bytes to OCR.space.
+        # Download once and reuse OCR results from the in-memory cache.
         image_response = HTTP.get(image_url, headers={"Referer": referer}, timeout=30)
         image_response.raise_for_status()
         content_type = image_response.headers.get("Content-Type", "").split(";")[0].lower()
@@ -197,63 +228,33 @@ def translate_page():
         image_hash = hashlib.sha256(image_response.content).hexdigest()
         cached_ocr = OCR_CACHE.get(image_hash)
         if cached_ocr:
-            extracted, ocr_lines = cached_ocr
+            extracted, ocr_lines, ocr_provider = cached_ocr
         else:
-            extension = "png" if "png" in content_type else "webp" if "webp" in content_type else "jpg"
-            ocr_response = None
-            last_ocr_error = None
-            for attempt in range(3):
+            provider = os.getenv("OCR_PROVIDER", "auto").strip().lower()
+            vision_key = os.getenv("GOOGLE_CLOUD_VISION_API_KEY")
+            ocr_key = os.getenv("OCR_SPACE_API_KEY")
+            if provider not in {"auto", "google", "ocrspace"}:
+                raise RuntimeError("OCR_PROVIDER يجب أن يكون auto أو google أو ocrspace.")
+            use_google = provider == "google" or (provider == "auto" and bool(vision_key))
+            if use_google:
+                if not vision_key:
+                    raise RuntimeError("مفتاح Google Vision غير مضبوط: GOOGLE_CLOUD_VISION_API_KEY.")
                 try:
-                    ocr_response = HTTP.post(
-                        "https://api.ocr.space/parse/image",
-                        data={"apikey": api_key, "language": "eng", "isOverlayRequired": "true"},
-                        files={"file": (f"manga-page.{extension}", image_response.content, content_type)},
-                        timeout=(20, 120)
-                    )
-                    ocr_response.raise_for_status()
-                    break
-                except requests.RequestException as exc:
-                    last_ocr_error = exc
-                    if attempt < 2:
-                        time.sleep(3 * (attempt + 1))
-            if ocr_response is None or not ocr_response.ok:
-                raise RuntimeError(
-                    f"خدمة OCR لم تستجب بعد 3 محاولات: {last_ocr_error}. "
-                    "جرّب لاحقاً أو استخدم صورة أصغر."
-                )
-            payload = ocr_response.json()
-            if payload.get("IsErroredOnProcessing"):
-                message = payload.get("ErrorMessage") or "فشل OCR."
-                return jsonify(error=str(message)), 502
-            results = payload.get("ParsedResults") or []
-            extracted = "\n".join(item.get("ParsedText", "") for item in results).strip()
-            if not extracted:
-                return jsonify(error="لم يتمكن OCR من قراءة نص واضح في هذه الصفحة."), 422
-
-            ocr_lines = []
-            for parsed_result in results:
-                overlay = parsed_result.get("TextOverlay") or {}
-                for line in overlay.get("Lines") or []:
-                    words = line.get("Words") or []
-                    if not words:
-                        continue
-                    left = min(float(word.get("Left", 0)) for word in words)
-                    top = min(float(word.get("Top", 0)) for word in words)
-                    right = max(float(word.get("Left", 0)) + float(word.get("Width", 0)) for word in words)
-                    bottom = max(float(word.get("Top", 0)) + float(word.get("Height", 0)) for word in words)
-                    line_text = " ".join(str(word.get("WordText", "")) for word in words).strip()
-                    if right > left and bottom > top:
-                        ocr_lines.append({
-                            "text": line_text,
-                            "left": round(left, 2),
-                            "top": round(top, 2),
-                            "width": round(right - left, 2),
-                            "height": round(bottom - top, 2)
-                        })
+                    extracted, ocr_lines = extract_google_vision(image_response.content, vision_key)
+                    ocr_provider = "google_vision"
+                except Exception as google_error:
+                    if not ocr_key:
+                        raise RuntimeError(f"فشل Google Vision OCR: {google_error}") from google_error
+                    extracted, ocr_lines = run_ocr_space(image_response.content, content_type, ocr_key)
+                    ocr_provider = "ocr_space_fallback"
+            else:
+                if not ocr_key:
+                    raise RuntimeError("أضف GOOGLE_CLOUD_VISION_API_KEY أو OCR_SPACE_API_KEY.")
+                extracted, ocr_lines = run_ocr_space(image_response.content, content_type, ocr_key)
+                ocr_provider = "ocr_space"
             if len(OCR_CACHE) >= 40:
                 OCR_CACHE.pop(next(iter(OCR_CACHE)))
-            OCR_CACHE[image_hash] = (extracted, ocr_lines)
-
+            OCR_CACHE[image_hash] = (extracted, ocr_lines, ocr_provider)
         line_texts = [line["text"] for line in ocr_lines if line.get("text")]
         if line_texts:
             numbered_text = "\n".join(f"{i + 1}. {line_text}" for i, line_text in enumerate(line_texts))
@@ -284,7 +285,7 @@ def translate_page():
             translated = translate_text(extracted, data.get("chapter_title", ""), data.get("page_index"))
             translated_lines = []
         return jsonify(original=extracted, translated=translated,
-                       ocr_lines=ocr_lines, translated_lines=translated_lines)
+                       ocr_lines=ocr_lines, translated_lines=translated_lines, ocr_provider=ocr_provider)
     except (requests.RequestException, ValueError, RuntimeError) as exc:
         return jsonify(error=f"تعذرت المعالجة: {exc}"), 502
 
