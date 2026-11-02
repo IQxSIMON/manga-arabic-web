@@ -22,11 +22,17 @@ loadBtn.addEventListener("click", async () => {
       card.className = "page";
       const heading = document.createElement("h3");
       heading.textContent = `الصفحة ${page.index}`;
+      const imageWrap = document.createElement("div");
+      imageWrap.className = "image-wrap";
       const img = document.createElement("img");
+      const overlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      overlay.classList.add("ocr-overlay");
+      overlay.setAttribute("aria-hidden", "true");
       const imageProxy = `/api/image?url=${encodeURIComponent(page.image)}&referer=${encodeURIComponent(url)}`;
       img.src = imageProxy;
       img.alt = `Manga page ${page.index}`;
       img.loading = "lazy";
+      imageWrap.append(img, overlay);
       const button = document.createElement("button");
       button.textContent = "استخراج النص وترجمته";
       const result = document.createElement("div");
@@ -53,6 +59,45 @@ loadBtn.addEventListener("click", async () => {
           original.className = "original";
           original.textContent = out.original;
           result.append(translatedTitle, translated, originalTitle, original);
+
+          if (Array.isArray(out.ocr_lines) && out.ocr_lines.length) {
+            overlay.replaceChildren();
+            const drawOverlay = () => {
+              if (!img.naturalWidth || !img.naturalHeight) return;
+              overlay.setAttribute("viewBox", `0 0 ${img.naturalWidth} ${img.naturalHeight}`);
+              overlay.setAttribute("preserveAspectRatio", "none");
+              out.ocr_lines.forEach((line, index) => {
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                rect.setAttribute("x", line.left);
+                rect.setAttribute("y", line.top);
+                rect.setAttribute("width", line.width);
+                rect.setAttribute("height", line.height);
+                rect.setAttribute("class", "ocr-box");
+                const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+                title.textContent = line.text || `Text line ${index + 1}`;
+                rect.append(title);
+                overlay.append(rect);
+              });
+            };
+            const overlayButton = document.createElement("button");
+            overlayButton.className = "overlay-toggle";
+            overlayButton.textContent = `إظهار مواقع النصوص المكتشفة (${out.ocr_lines.length})`;
+            overlayButton.addEventListener("click", () => {
+              if (!img.complete || !img.naturalWidth) {
+                img.addEventListener("load", drawOverlay, {once: true});
+              } else {
+                drawOverlay();
+              }
+              const visible = overlay.classList.toggle("visible");
+              overlayButton.textContent = visible ? "إخفاء مواقع النصوص" : `إظهار مواقع النصوص المكتشفة (${out.ocr_lines.length})`;
+            });
+            result.append(overlayButton);
+          } else {
+            const noBoxes = document.createElement("p");
+            noBoxes.className = "note";
+            noBoxes.textContent = "لم يوفر OCR إحداثيات للنصوص في هذه الصفحة؛ الترجمة النصية ما زالت متاحة.";
+            result.append(noBoxes);
+          }
         } catch (error) {
           result.textContent = error.message;
         } finally {
@@ -60,7 +105,7 @@ loadBtn.addEventListener("click", async () => {
           button.textContent = "إعادة المحاولة";
         }
       });
-      card.append(heading, img, button, result);
+      card.append(heading, imageWrap, button, result);
       pagesBox.append(card);
     });
   } catch (error) {
