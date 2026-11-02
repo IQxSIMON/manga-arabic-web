@@ -70,7 +70,7 @@ def get_chapter():
         return jsonify(error=f"تعذر جلب الفصل: {exc}"), 502
 
 
-def translate_text(text, chapter_title="", page_index=None):
+def translate_text(text, chapter_title="", page_index=None, line_mode=False):
     if not text.strip():
         return ""
     api_key = os.getenv("GEMINI_API_KEY")
@@ -88,6 +88,7 @@ def translate_text(text, chapter_title="", page_index=None):
 - اجعل الجمل موجزة بقدر الإمكان لتناسب فقاعات الكلام، من دون حذف معنى مهم.
 - حافظ على أسماء الشخصيات والأماكن والمهارات والألقاب كما هي إذا لم يتوفر مقابل عربي ثابت، ولا تخترع أسماء.
 - حافظ على ترتيب الأسطر والفقرات قدر الإمكان، وترجم المؤثرات الصوتية بما يناسب معناها.
+- عند تفعيل وضع line_mode: كل سطر مرقم في الإدخال يقابله سطر ترجمة واحد بالترتيب نفسه، ولا تدمج الأسطر ولا تضف أرقاماً أو شروحاً.
 - إذا كان النص OCR مشوشاً أو ناقصاً، استنتج بحذر من السياق ولا تضف حواراً غير موجود.
 - أخرج الترجمة العربية فقط، دون النص الإنجليزي أو شروح أو مقدمات أو علامات اقتباس إضافية.
 """
@@ -231,8 +232,37 @@ def translate_page():
                         "height": round(bottom - top, 2)
                     })
 
-        translated = translate_text(extracted, data.get("chapter_title", ""), data.get("page_index"))
-        return jsonify(original=extracted, translated=translated, ocr_lines=ocr_lines)
+        line_texts = [line["text"] for line in ocr_lines if line.get("text")]
+        if line_texts:
+            numbered_text = "\\n".join(f"{i + 1}. {line_text}" for i, line_text in enumerate(line_texts))
+            translated_raw = translate_text(
+                numbered_text, data.get("chapter_title", ""), data.get("page_index"), line_mode=True
+            )
+            translated_parts = []
+            for output_line in translated_raw.splitlines():
+                cleaned = re.sub(r"^\\s*\\d+[.)、-]\\s*", "", output_line).strip()
+                if cleaned:
+                    translated_parts.append(cleaned)
+            # Keep source-to-translation alignment explicit. If the model
+            # changes line count, retain available translations and mark gaps.
+            translated_lines = []
+            for index, source_line in enumerate(ocr_lines):
+                translated_line = translated_parts[index] if index < len(translated_parts) else ""
+                translated_lines.append({
+                    "index": index + 1,
+                    "text": source_line["text"],
+                    "translated": translated_line,
+                    "left": source_line["left"],
+                    "top": source_line["top"],
+                    "width": source_line["width"],
+                    "height": source_line["height"]
+                })
+            translated = "\\n".join(item["translated"] for item in translated_lines if item["translated"])
+        else:
+            translated = translate_text(extracted, data.get("chapter_title", ""), data.get("page_index"))
+            translated_lines = []
+        return jsonify(original=extracted, translated=translated,
+                       ocr_lines=ocr_lines, translated_lines=translated_lines)
     except (requests.RequestException, ValueError, RuntimeError) as exc:
         return jsonify(error=f"تعذرت المعالجة: {exc}"), 502
 
