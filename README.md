@@ -6,11 +6,16 @@ A prototype web app for loading a supported manga chapter URL, extracting page i
 
 - Paste a supported chapter URL.
 - Fetch chapter page images from MangaK.
-- Run OCR and display Arabic translations alongside each page.
+- Run OCR and retain line-level text coordinates.
+- Translate OCR lines in order and return each Arabic translation with its source text and image coordinates.
+- Display OCR boxes and a per-line translation review list.
 
-## Limitations
+## Current limitations
 
-This MVP does not erase original lettering or typeset Arabic text inside speech bubbles. Those require text-region detection, image inpainting, and Arabic lettering layout. Site anti-bot protection or JavaScript-only page rendering may also prevent extraction.
+- OCR rectangles mark text lines, not complete speech-bubble boundaries.
+- Line-to-translation alignment is a first-pass mapping; review pages where OCR merges or splits lines or Gemini changes the line count.
+- The app does not yet erase English lettering, inpaint the artwork, detect complete bubbles, or typeset Arabic inside bubbles.
+- Site anti-bot protection or JavaScript-only page rendering may prevent chapter extraction.
 
 ## Run locally
 
@@ -19,4 +24,4 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Set `OCR_SPACE_API_KEY` in the environment before using OCR. This is a prototype and has not been deployed.
+Set `OCR_SPACE_API_KEY` and `GEMINI_API_KEY` in the environment before using OCR and translation.
