@@ -58,7 +58,10 @@ loadBtn.addEventListener("click", async () => {
           const original = document.createElement("p");
           original.className = "original";
           original.textContent = out.original;
-          result.append(translatedTitle, translated);
+          const providerNote = document.createElement("p");
+          providerNote.className = "note";
+          providerNote.textContent = out.ocr_provider === "google_vision" ? "محرك OCR: Google Cloud Vision" : out.ocr_provider === "ocr_space_fallback" ? "محرك OCR: OCR.space (احتياطي بعد تعذر Google Vision)" : "محرك OCR: OCR.space";
+          result.append(providerNote, translatedTitle, translated);
           if (Array.isArray(out.translated_lines) && out.translated_lines.length) {
             const linesTitle = document.createElement("h4");
             linesTitle.textContent = "مطابقة الترجمة مع مواقع النصوص";
