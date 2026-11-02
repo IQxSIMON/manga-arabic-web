@@ -23,7 +23,8 @@ loadBtn.addEventListener("click", async () => {
       const heading = document.createElement("h3");
       heading.textContent = `الصفحة ${page.index}`;
       const img = document.createElement("img");
-      img.src = page.image;
+      const imageProxy = `/api/image?url=${encodeURIComponent(page.image)}&referer=${encodeURIComponent(url)}`;
+      img.src = imageProxy;
       img.alt = `Manga page ${page.index}`;
       img.loading = "lazy";
       const button = document.createElement("button");
@@ -36,7 +37,7 @@ loadBtn.addEventListener("click", async () => {
         try {
           const r = await fetch("/api/translate", {
             method: "POST", headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({image: page.image})
+            body: JSON.stringify({image: page.image, referer: url})
           });
           const out = await r.json();
           if (!r.ok) throw new Error(out.error || "فشلت المعالجة.");
