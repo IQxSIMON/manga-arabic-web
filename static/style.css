@@ -1,0 +1,17 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #10131a; color: #eef1f7; }
+.container { width: min(920px, 94%); margin: 32px auto; }
+header { margin-bottom: 22px; }
+h1 { margin-bottom: 8px; }
+p { color: #bac4d5; line-height: 1.7; }
+.panel, .page { background: #1a202b; border: 1px solid #30394a; border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+label { display: block; margin-bottom: 8px; }
+input { width: 100%; padding: 13px; border-radius: 9px; border: 1px solid #46536a; background: #0f141d; color: white; margin-bottom: 12px; }
+button { border: 0; border-radius: 9px; background: #4b78d1; color: white; padding: 11px 18px; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .55; cursor: wait; }
+.note { font-size: .88rem; margin-bottom: 0; }
+#status { margin: 14px 0; color: #f0c878; }
+.page img { display: block; max-width: 100%; height: auto; margin: 12px auto; }
+.translation { white-space: pre-wrap; line-height: 1.9; background: #111722; border-radius: 9px; padding: 14px; }
+.original { white-space: pre-wrap; color: #aebbd0; font-size: .9rem; }
