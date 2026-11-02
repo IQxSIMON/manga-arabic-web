@@ -101,7 +101,7 @@ def translate_page():
         # OCR.space accepts a public image URL. The chapter source must expose image URLs publicly.
         ocr_response = HTTP.post(
             "https://api.ocr.space/parse/image",
-            data={" apikey": api_key, "url": image_url, "language": "eng", "isOverlayRequired": "false"},
+            data={"apikey": api_key, "url": image_url, "language": "eng", "isOverlayRequired": "false"},
             timeout=60
         )
         ocr_response.raise_for_status()
