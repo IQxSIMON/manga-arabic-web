@@ -37,7 +37,7 @@ loadBtn.addEventListener("click", async () => {
         try {
           const r = await fetch("/api/translate", {
             method: "POST", headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({image: page.image, referer: url})
+            body: JSON.stringify({image: page.image, referer: url, chapter_title: data.title, page_index: page.index})
           });
           const out = await r.json();
           if (!r.ok) throw new Error(out.error || "فشلت المعالجة.");
