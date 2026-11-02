@@ -23,3 +23,10 @@ button:disabled { opacity: .55; cursor: wait; }
 .ocr-overlay.visible { display: block; }
 .ocr-box { fill: rgba(255, 190, 0, .10); stroke: #ffb900; stroke-width: 3; vector-effect: non-scaling-stroke; }
 .overlay-toggle { margin-top: 12px; background: #7256a8; }
+
+.translated-lines { display: grid; gap: 10px; margin: 12px 0; }
+.translated-line { background: #111722; border: 1px solid #30394a; border-radius: 9px; padding: 10px 12px; }
+.translated-line p { margin: 4px 0; white-space: pre-wrap; }
+.line-source { color: #aebbd0; font-size: .9rem; }
+.line-target { color: #f3f5fa; font-size: 1rem; }
+.line-coords { color: #91a0b8; font-size: .75rem; }
