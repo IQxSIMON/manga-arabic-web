@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>قارئ المانغا العربي</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>قارئ المانغا العربي</h1>
+      <p>ضع رابط الفصل، وسنحاول جلب الصفحات وقراءة النص الإنجليزي وترجمته.</p>
+    </header>
+    <section class="panel">
+      <label for="chapterUrl">رابط الفصل</label>
+      <input id="chapterUrl" type="url" dir="ltr" value="https://mangak.io/zero-damage-sword-saint-i-enrolled-in-a-magic-school-and-wound-up-in-a-contract-with-the-demon-queen/chapter-7">
+      <button id="loadBtn">جلب الفصل</button>
+      <p class="note">الدعم الحالي تجريبي لموقع MangaK فقط.</p>
+    </section>
+    <div id="status" role="status"></div>
+    <section id="pages" class="pages"></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
