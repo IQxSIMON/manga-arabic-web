@@ -92,10 +92,10 @@ def translate_text(text, chapter_title="", page_index=None):
 """
     context = f"عنوان الفصل: {chapter_title or 'غير محدد'}"
     if page_index is not None:
-        context += f"\\nرقم الصفحة: {page_index}"
+        context += f"\nرقم الصفحة: {page_index}"
     payload = {
         "systemInstruction": {"parts": [{"text": system_instruction}]},
-        "contents": [{"role": "user", "parts": [{"text": context + "\\n\\nالنص المستخرج من الصفحة:\\n" + text[:12000]}]}],
+        "contents": [{"role": "user", "parts": [{"text": context + "\n\nالنص المستخرج من الصفحة:\n" + text[:12000]}]}],
         "generationConfig": {"temperature": 0.35, "topP": 0.9, "maxOutputTokens": 4096}
     }
     response = HTTP.post(
@@ -113,7 +113,7 @@ def translate_text(text, chapter_title="", page_index=None):
     data = response.json()
     candidates = data.get("candidates") or []
     parts = (candidates[0].get("content", {}).get("parts", []) if candidates else [])
-    translated = "\\n".join(part.get("text", "") for part in parts if part.get("text")).strip()
+    translated = "\n".join(part.get("text", "") for part in parts if part.get("text")).strip()
     if not translated:
         raise RuntimeError("Gemini لم يُرجع ترجمة نصية. قد يكون الطلب مرفوضاً أو النص غير واضح.")
     return translated
