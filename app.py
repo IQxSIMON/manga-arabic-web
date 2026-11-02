@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import hashlib
 from urllib.parse import urlparse, urljoin
 
 import requests
@@ -16,6 +17,7 @@ HTTP.headers.update({
 })
 CHAPTER_HOSTS = {"mangak.io", "www.mangak.io"}
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".avif")
+OCR_CACHE = {}  # Avoid repeating OCR when translation needs a retry.
 
 
 def valid_chapter_url(url):
@@ -105,23 +107,23 @@ def translate_text(text, chapter_title="", page_index=None, line_mode=False):
     retryable_statuses = {408, 429, 500, 502, 503, 504}
     response = None
     last_network_error = None
-    for attempt in range(4):
+    for attempt in range(6):
         try:
             response = HTTP.post(
                 endpoint,
                 headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
                 json=payload,
-                timeout=60
+                timeout=(15, 90)
             )
             if response.status_code not in retryable_statuses:
                 break
-            if attempt < 3:
-                time.sleep(2 ** attempt)  # 1, 2, then 4 seconds
+            if attempt < 5:
+                time.sleep([2, 4, 8, 12, 20][attempt])
         except requests.RequestException as exc:
             last_network_error = exc
-            if attempt == 3:
-                raise RuntimeError(f"تعذر الاتصال بخدمة Gemini بعد 4 محاولات: {exc}") from exc
-            time.sleep(2 ** attempt)
+            if attempt == 5:
+                raise RuntimeError(f"تعذر الاتصال بخدمة Gemini بعد 6 محاولات: {exc}") from exc
+            time.sleep([2, 4, 8, 12, 20][attempt])
 
     if last_network_error and response is None:
         raise RuntimeError(f"تعذر الاتصال بخدمة Gemini: {last_network_error}")
@@ -135,8 +137,8 @@ def translate_text(text, chapter_title="", page_index=None, line_mode=False):
             detail = response.text
         if response.status_code in retryable_statuses:
             raise RuntimeError(
-                f"Gemini ما زال مزدحماً بعد 4 محاولات (HTTP {response.status_code}). "
-                f"أعد معالجة هذه الصفحة لاحقاً. التفاصيل: {detail[:350]}"
+                f"Gemini ما زال مزدحماً بعد 6 محاولات (HTTP {response.status_code}). "
+                f"انتظر دقيقة ثم أعد المحاولة. التفاصيل: {detail[:350]}"
             )
         raise RuntimeError(f"Gemini API (HTTP {response.status_code}): {detail[:500]}")
     data = response.json()
