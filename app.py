@@ -194,7 +194,7 @@ def translate_page():
         extension = "png" if "png" in content_type else "webp" if "webp" in content_type else "jpg"
         ocr_response = HTTP.post(
             "https://api.ocr.space/parse/image",
-            data={"apikey": api_key, "language": "eng", "isOverlayRequired": "false"},
+            data={"apikey": api_key, "language": "eng", "isOverlayRequired": "true"},
             files={"file": (f"manga-page.{extension}", image_response.content, content_type)},
             timeout=60
         )
@@ -207,8 +207,32 @@ def translate_page():
         extracted = "\n".join(item.get("ParsedText", "") for item in results).strip()
         if not extracted:
             return jsonify(error="لم يتمكن OCR من قراءة نص واضح في هذه الصفحة."), 422
+
+        # Keep OCR line-level geometry so the next image-processing step can
+        # place translations in the correct regions without guessing positions.
+        ocr_lines = []
+        for parsed_result in results:
+            overlay = parsed_result.get("TextOverlay") or {}
+            for line in overlay.get("Lines") or []:
+                words = line.get("Words") or []
+                if not words:
+                    continue
+                left = min(float(word.get("Left", 0)) for word in words)
+                top = min(float(word.get("Top", 0)) for word in words)
+                right = max(float(word.get("Left", 0)) + float(word.get("Width", 0)) for word in words)
+                bottom = max(float(word.get("Top", 0)) + float(word.get("Height", 0)) for word in words)
+                line_text = " ".join(str(word.get("WordText", "")) for word in words).strip()
+                if right > left and bottom > top:
+                    ocr_lines.append({
+                        "text": line_text,
+                        "left": round(left, 2),
+                        "top": round(top, 2),
+                        "width": round(right - left, 2),
+                        "height": round(bottom - top, 2)
+                    })
+
         translated = translate_text(extracted, data.get("chapter_title", ""), data.get("page_index"))
-        return jsonify(original=extracted, translated=translated)
+        return jsonify(original=extracted, translated=translated, ocr_lines=ocr_lines)
     except (requests.RequestException, ValueError, RuntimeError) as exc:
         return jsonify(error=f"تعذرت المعالجة: {exc}"), 502
 
