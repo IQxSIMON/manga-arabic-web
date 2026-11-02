@@ -69,19 +69,53 @@ def get_chapter():
         return jsonify(error=f"تعذر جلب الفصل: {exc}"), 502
 
 
-def translate_text(text):
+def translate_text(text, chapter_title="", page_index=None):
     if not text.strip():
         return ""
-    response = HTTP.get(
-        "https://api.mymemory.translated.net/get",
-        params={"q": text[:4500], "langpair": "en|ar"},
-        timeout=25
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("مفتاح Gemini غير مضبوط. أضف GEMINI_API_KEY في Termux ثم أعد تشغيل التطبيق.")
+
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    system_instruction = """
+أنت مترجم مانغا محترف من الإنجليزية إلى العربية.
+المطلوب ترجمة أدبية سياقية للحوار والنصوص داخل صفحات المانغا، وليست ترجمة حرفية.
+قواعد إلزامية:
+- انقل المعنى المقصود والمشاعر والنبرة والعلاقة بين المتحدثين، ولا تلتزم بترتيب الكلمات الإنجليزي.
+- استخدم عربية فصحى طبيعية وسلسة ومناسبة لحوار المانغا، وتجنب الركاكة والترجمة الآلية.
+- اجعل الجمل موجزة بقدر الإمكان لتناسب فقاعات الكلام، من دون حذف معنى مهم.
+- حافظ على أسماء الشخصيات والأماكن والمهارات والألقاب كما هي إذا لم يتوفر مقابل عربي ثابت، ولا تخترع أسماء.
+- حافظ على ترتيب الأسطر والفقرات قدر الإمكان، وترجم المؤثرات الصوتية بما يناسب معناها.
+- إذا كان النص OCR مشوشاً أو ناقصاً، استنتج بحذر من السياق ولا تضف حواراً غير موجود.
+- أخرج الترجمة العربية فقط، دون النص الإنجليزي أو شروح أو مقدمات أو علامات اقتباس إضافية.
+"""
+    context = f"عنوان الفصل: {chapter_title or 'غير محدد'}"
+    if page_index is not None:
+        context += f"\\nرقم الصفحة: {page_index}"
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "contents": [{"role": "user", "parts": [{"text": context + "\\n\\nالنص المستخرج من الصفحة:\\n" + text[:12000]}]}],
+        "generationConfig": {"temperature": 0.35, "topP": 0.9, "maxOutputTokens": 4096}
+    }
+    response = HTTP.post(
+        endpoint,
+        headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+        json=payload,
+        timeout=60
     )
-    response.raise_for_status()
-    payload = response.json()
-    translated = payload.get("responseData", {}).get("translatedText")
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("error", {}).get("message", response.text)
+        except ValueError:
+            detail = response.text
+        raise RuntimeError(f"Gemini API: {detail[:500]}")
+    data = response.json()
+    candidates = data.get("candidates") or []
+    parts = (candidates[0].get("content", {}).get("parts", []) if candidates else [])
+    translated = "\\n".join(part.get("text", "") for part in parts if part.get("text")).strip()
     if not translated:
-        raise RuntimeError("خدمة الترجمة لم تُرجع نصاً.")
+        raise RuntimeError("Gemini لم يُرجع ترجمة نصية. قد يكون الطلب مرفوضاً أو النص غير واضح.")
     return translated
 
 
@@ -145,7 +179,7 @@ def translate_page():
         extracted = "\n".join(item.get("ParsedText", "") for item in results).strip()
         if not extracted:
             return jsonify(error="لم يتمكن OCR من قراءة نص واضح في هذه الصفحة."), 422
-        translated = translate_text(extracted)
+        translated = translate_text(extracted, data.get("chapter_title", ""), data.get("page_index"))
         return jsonify(original=extracted, translated=translated)
     except (requests.RequestException, ValueError, RuntimeError) as exc:
         return jsonify(error=f"تعذرت المعالجة: {exc}"), 502
