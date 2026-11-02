@@ -58,7 +58,30 @@ loadBtn.addEventListener("click", async () => {
           const original = document.createElement("p");
           original.className = "original";
           original.textContent = out.original;
-          result.append(translatedTitle, translated, originalTitle, original);
+          result.append(translatedTitle, translated);
+          if (Array.isArray(out.translated_lines) && out.translated_lines.length) {
+            const linesTitle = document.createElement("h4");
+            linesTitle.textContent = "مطابقة الترجمة مع مواقع النصوص";
+            const linesList = document.createElement("div");
+            linesList.className = "translated-lines";
+            out.translated_lines.forEach(line => {
+              const item = document.createElement("section");
+              item.className = "translated-line";
+              const source = document.createElement("p");
+              source.className = "line-source";
+              source.textContent = line.index + ". " + line.text;
+              const target = document.createElement("p");
+              target.className = "line-target";
+              target.textContent = line.translated || "لم تُطابق ترجمة لهذا السطر؛ يحتاج مراجعة.";
+              const coords = document.createElement("small");
+              coords.className = "line-coords";
+              coords.textContent = `الموقع: x=${Math.round(line.left)}, y=${Math.round(line.top)} — ${Math.round(line.width)}×${Math.round(line.height)} px`;
+              item.append(source, target, coords);
+              linesList.append(item);
+            });
+            result.append(linesTitle, linesList);
+          }
+          result.append(originalTitle, original);
 
           if (Array.isArray(out.ocr_lines) && out.ocr_lines.length) {
             overlay.replaceChildren();
