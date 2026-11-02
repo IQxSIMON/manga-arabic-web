@@ -4,7 +4,7 @@ from urllib.parse import urlparse, urljoin
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -85,23 +85,55 @@ def translate_text(text):
     return translated
 
 
+@app.get("/api/image")
+def proxy_image():
+    image_url = (request.args.get("url") or "").strip()
+    referer = (request.args.get("referer") or "").strip()
+    parsed = urlparse(image_url)
+    ref_parsed = urlparse(referer)
+    if parsed.scheme != "https" or not parsed.netloc or ref_parsed.hostname not in CHAPTER_HOSTS:
+        return jsonify(error="رابط الصورة أو مرجع الفصل غير صالح."), 400
+    try:
+        image_response = HTTP.get(image_url, headers={"Referer": referer}, timeout=30)
+        image_response.raise_for_status()
+        content_type = image_response.headers.get("Content-Type", "").split(";")[0].lower()
+        if not content_type.startswith("image/"):
+            return jsonify(error="المصدر لم يُرجع ملف صورة."), 415
+        if len(image_response.content) > 12 * 1024 * 1024:
+            return jsonify(error="حجم الصورة أكبر من الحد المسموح (12 MB)."), 413
+        return Response(image_response.content, mimetype=content_type, headers={"Cache-Control": "public, max-age=1800"})
+    except requests.RequestException as exc:
+        return jsonify(error=f"تعذر تحميل الصورة من المصدر: {exc}"), 502
+
+
 @app.post("/api/translate")
 def translate_page():
     data = request.get_json(silent=True) or {}
     image_url = (data.get("image") or "").strip()
+    referer = (data.get("referer") or "").strip()
     parsed = urlparse(image_url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return jsonify(error="رابط الصورة غير صالح."), 400
+    ref_parsed = urlparse(referer)
+    if parsed.scheme != "https" or not parsed.netloc or ref_parsed.hostname not in CHAPTER_HOSTS:
+        return jsonify(error="رابط الصورة أو مرجع الفصل غير صالح."), 400
 
     api_key = os.getenv("OCR_SPACE_API_KEY")
     if not api_key:
         return jsonify(error="مفتاح OCR غير مضبوط. أضف OCR_SPACE_API_KEY إلى متغيرات البيئة في الاستضافة."), 503
 
     try:
-        # OCR.space accepts a public image URL. The chapter source must expose image URLs publicly.
+        # Download the image with the chapter Referer, then upload its bytes to OCR.space.
+        image_response = HTTP.get(image_url, headers={"Referer": referer}, timeout=30)
+        image_response.raise_for_status()
+        content_type = image_response.headers.get("Content-Type", "").split(";")[0].lower()
+        if not content_type.startswith("image/"):
+            return jsonify(error="رابط الصفحة لم يُرجع صورة صالحة."), 415
+        if len(image_response.content) > 12 * 1024 * 1024:
+            return jsonify(error="حجم الصورة أكبر من الحد المسموح (12 MB)."), 413
+        extension = "png" if "png" in content_type else "webp" if "webp" in content_type else "jpg"
         ocr_response = HTTP.post(
             "https://api.ocr.space/parse/image",
-            data={"apikey": api_key, "url": image_url, "language": "eng", "isOverlayRequired": "false"},
+            data={"apikey": api_key, "language": "eng", "isOverlayRequired": "false"},
+            files={"file": (f"manga-page.{extension}", image_response.content, content_type)},
             timeout=60
         )
         ocr_response.raise_for_status()
