@@ -234,13 +234,13 @@ def translate_page():
 
         line_texts = [line["text"] for line in ocr_lines if line.get("text")]
         if line_texts:
-            numbered_text = "\\n".join(f"{i + 1}. {line_text}" for i, line_text in enumerate(line_texts))
+            numbered_text = "\n".join(f"{i + 1}. {line_text}" for i, line_text in enumerate(line_texts))
             translated_raw = translate_text(
                 numbered_text, data.get("chapter_title", ""), data.get("page_index"), line_mode=True
             )
             translated_parts = []
             for output_line in translated_raw.splitlines():
-                cleaned = re.sub(r"^\\s*\\d+[.)、-]\\s*", "", output_line).strip()
+                cleaned = re.sub(r"^\s*\d+[.)、-]\s*", "", output_line).strip()
                 if cleaned:
                     translated_parts.append(cleaned)
             # Keep source-to-translation alignment explicit. If the model
@@ -257,7 +257,7 @@ def translate_page():
                     "width": source_line["width"],
                     "height": source_line["height"]
                 })
-            translated = "\\n".join(item["translated"] for item in translated_lines if item["translated"])
+            translated = "\n".join(item["translated"] for item in translated_lines if item["translated"])
         else:
             translated = translate_text(extracted, data.get("chapter_title", ""), data.get("page_index"))
             translated_lines = []
