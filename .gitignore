@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+translator_engine/models/**
+!translator_engine/models/**/README*
+instance/
+ocr_test_results/
+runtime/
+android-app/.local-tools/
+android-app/local.properties
+android-app/sdk-install.log
+android-kotatsu-redo/.gradle/
+android-kotatsu-redo/local.properties
+android-kotatsu-redo/**/build/

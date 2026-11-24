@@ -1,0 +1,14 @@
+:root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#0b1119;color:#edf4fc}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -12%,#20374d 0,transparent 54%),#0b1119}
+.app{width:min(860px,94%);margin:0 auto;padding:28px 0 64px}.brand{display:flex;align-items:center;gap:14px;margin:4px 0 22px}
+.brand-mark{display:grid;place-items:center;width:46px;height:46px;border-radius:15px;background:#2487cf;color:white;font-size:26px;font-weight:800;box-shadow:0 8px 24px #167dc644}
+h1{font-size:clamp(1.35rem,4vw,1.8rem);margin:0}p{color:#adbdcf;line-height:1.7}.brand p{margin:3px 0 0;font-size:.94rem}
+.link-panel{padding:clamp(15px,3vw,24px);border:1px solid #26384a;border-radius:16px;background:#121c28eF;box-shadow:0 12px 35px #0003}
+label{display:block;font-weight:650;margin-bottom:9px}input{width:100%;min-width:0;border:1px solid #40556c;border-radius:10px;background:#0a121b;color:#f4f8fc;padding:14px;font:inherit;direction:ltr}
+input:focus{outline:2px solid #36a2ed;outline-offset:1px}.url-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+button{border:0;border-radius:10px;padding:0 20px;background:#2187d1;color:white;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.55;cursor:wait}
+.hint{font-size:.87rem;margin:10px 0 0}.status{min-height:1.8em;margin:18px 4px;color:#80caff}
+.sources-panel{margin:18px 2px 22px}.sources-panel h2{margin:0;font-size:1rem}.source-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.source-chip{padding:7px 11px;border:1px solid #30465b;border-radius:999px;background:#111d29;color:#cfdfef;font-size:.85rem}.source-list .hint{margin:0}
+.pages{display:grid;gap:12px}.page{width:100%;height:auto;display:block;border-radius:7px;background:#121c28}
+.empty{padding:14px;border:1px solid #28394c;border-radius:12px;background:#111a25;color:#c7d4e2}
+@media(max-width:560px){.app{padding-top:18px}.url-row{grid-template-columns:1fr}.url-row button{min-height:46px}.brand{margin-bottom:16px}}
