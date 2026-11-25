@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0f1420</color>
+    <string name="app_name">مانجا عربي</string>
+    <style name="Theme.MangaArabic" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor">#0f1420</item>
+        <item name="android:windowBackground">#0f1420</item>
+        <item name="colorPrimary">#7c9eff</item>
+        <item name="colorAccent">#7c9eff</item>
+    </style>
+</resources>

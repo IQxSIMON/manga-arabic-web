@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.MangaArabic" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor">#0f1420</item>
+        <item name="android:windowBackground">#0f1420</item>
+        <item name="colorPrimary">#7c9eff</item>
+        <item name="colorAccent">#7c9eff</item>
+    </style>
+</resources>
