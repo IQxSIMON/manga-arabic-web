@@ -105,6 +105,8 @@ def protect_local_http_authority():
         if part.strip()
     }
     allowed_hosts.update(preview_hosts)
+    if os.getenv("VERCEL") and hostname.endswith(".vercel.app"):
+        allowed_hosts.add(hostname)
     if hostname not in allowed_hosts:
         return jsonify(error="رفض الطلب لأن اسم المضيف لا يطابق عنوان التطبيق المحلي."), 400
 
