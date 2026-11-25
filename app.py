@@ -99,9 +99,12 @@ def protect_local_http_authority():
     except ValueError:
         configured_host = "127.0.0.1"
     allowed_hosts = {"localhost", "127.0.0.1", configured_host}
-    preview_host = os.getenv("PREVIEW_ALLOWED_HOST", "").strip().casefold()
-    if preview_host:
-        allowed_hosts.add(preview_host)
+    preview_hosts = {
+        part.strip().casefold()
+        for part in os.getenv("PREVIEW_ALLOWED_HOST", "").split(",")
+        if part.strip()
+    }
+    allowed_hosts.update(preview_hosts)
     if hostname not in allowed_hosts:
         return jsonify(error="رفض الطلب لأن اسم المضيف لا يطابق عنوان التطبيق المحلي."), 400
 

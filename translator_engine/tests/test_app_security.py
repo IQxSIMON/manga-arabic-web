@@ -87,6 +87,17 @@ def test_local_server_rejects_unrecognized_host_header():
     assert response.status_code == 400
 
 
+def test_local_server_allows_each_configured_preview_host(monkeypatch):
+    monkeypatch.setenv(
+        "PREVIEW_ALLOWED_HOST", "sb-session.vercel.run, preview-check.vercel.run"
+    )
+    client = web_app.app.test_client()
+
+    assert client.get("/", headers={"Host": "sb-session.vercel.run"}).status_code == 200
+    assert client.get("/", headers={"Host": "preview-check.vercel.run"}).status_code == 200
+    assert client.get("/", headers={"Host": "other.vercel.run"}).status_code == 400
+
+
 def test_local_write_routes_reject_cross_origin_requests(monkeypatch, tmp_path):
     monkeypatch.setenv("MANGA_LIBRARY_DIR", str(tmp_path / "library"))
     client = web_app.app.test_client()
