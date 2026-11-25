@@ -720,6 +720,24 @@ def render_translated_page(image_bytes: bytes, translated_regions: list[dict], *
             # Retain the region when it has a text-sized OCR box and use that
             # narrow box as the repair boundary; never expand an unmatched
             # whole-balloon fallback into an erase operation.
+            saved = region.get("bubble_bbox")
+            if isinstance(saved, (list, tuple)) and len(saved) == 4:
+                try:
+                    sx1, sy1, sx2, sy2 = (int(value) for value in saved)
+                except (TypeError, ValueError, OverflowError):
+                    sx1 = sy1 = sx2 = sy2 = 0
+                if sx2 > sx1 and sy2 > sy1 and not any(
+                    min(sx2, bx2) > max(sx1, bx1)
+                    and min(sy2, by2) > max(sy1, by1)
+                    for bx1, by1, bx2, by2 in (
+                        bubble.bbox for bubble in detected_bubbles
+                    )
+                ):
+                    # The saved balloon lies entirely outside every detected
+                    # bubble: the page layout changed, so the OCR box fallback
+                    # cannot be trusted to erase the right ink.
+                    unmatched_bubble_region_indices.append(region.get("index"))
+                    continue
             if region.get("detection_fallback") == "whole_bubble_crop":
                 unmatched_bubble_region_indices.append(region.get("index"))
                 continue

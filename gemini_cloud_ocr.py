@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import random
 import re
 import threading
@@ -15,7 +16,7 @@ from PIL import Image
 OCR_MODEL = "gemini-3.5-flash-lite"
 BATCH_SIZE = 20
 MAX_ATTEMPTS = 3
-_MIN_REQUEST_INTERVAL = 5.3
+_MIN_REQUEST_INTERVAL = float(os.environ.get("GEMINI_MIN_REQUEST_INTERVAL", "4.0"))
 _REQUEST_LOCK = threading.Lock()
 _LAST_REQUEST_START = 0.0
 

@@ -708,7 +708,7 @@ def test_common_digit_letter_ocr_confusions_are_repaired_only_when_unique(monkey
 def test_local_ocr_returns_only_bubble_regions_with_page_coordinates():
     result = LocalRapidOCR().extract(SAMPLE_PAGE.read_bytes())
 
-    assert result["provider"].startswith("rapidocr_onnxruntime_cpu")
+    assert result["provider"].startswith(("rapidocr_onnxruntime_cpu", "ppocrv6_manga_v03_onnxruntime_cpu"))
     assert result["lines"]
     assert result["regions"]
     assert result["elapsed_seconds"] > 0

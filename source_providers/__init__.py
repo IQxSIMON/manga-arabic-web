@@ -4,8 +4,22 @@ from .mangak import MangaKProvider
 from .mangadex import MangaDexProvider
 from .manhuaplus import ManhuaPlusProvider
 from .atsumaru import AtsumaruProvider
+from .aquareader import AquaReaderProvider
 from .registry import ProviderRegistry
 
-providers = ProviderRegistry([MangaDexProvider(), ManhuaPlusProvider(), AtsumaruProvider()])
+providers = ProviderRegistry([
+    MangaDexProvider(),
+    ManhuaPlusProvider(),
+    AtsumaruProvider(),
+    AquaReaderProvider(),
+])
 
-__all__ = ["AtsumaruProvider", "MangaKProvider", "MangaDexProvider", "ManhuaPlusProvider", "ProviderRegistry", "providers"]
+__all__ = [
+    "AtsumaruProvider",
+    "AquaReaderProvider",
+    "MangaKProvider",
+    "MangaDexProvider",
+    "ManhuaPlusProvider",
+    "ProviderRegistry",
+    "providers",
+]

@@ -1,6 +1,12 @@
 import pytest
 
-from source_providers import MangaKProvider, MangaDexProvider, ManhuaPlusProvider, ProviderRegistry
+from source_providers import (
+    AquaReaderProvider,
+    MangaKProvider,
+    MangaDexProvider,
+    ManhuaPlusProvider,
+    ProviderRegistry,
+)
 
 
 def test_mangak_provider_parses_pages_and_rejects_http_images():
@@ -460,3 +466,51 @@ def test_remote_page_returns_completed_regions_and_progress_after_model_timeout(
     assert progress.json["progress"]["stage"] == "partial"
     assert progress.json["progress"]["completed_regions"] == 1
     assert progress.json["progress"]["current_region_elapsed_seconds"] is None
+
+
+def test_aquareader_search_chapters_and_reader_images():
+    provider = AquaReaderProvider()
+    assert provider.can_handle("https://aquareader.org/manga/example/chapter-12")
+    assert provider.can_handle("https://aquamanga.io/manga/example/chapter-12")
+    assert not provider.can_handle("http://aquamanga.io/manga/example/chapter-12")
+    assert not provider.can_handle("https://aquamanga.io/user/profile")
+
+    class Response:
+        url = "https://aquamanga.io/?s=example&post_type=wp-manga"
+        text = '''<a href="/manga/example"><h4>Example Manhwa</h4></a>
+                  <a href="https://evil.example/manga/fake">Fake</a>
+                  <a href="/manga/example/chapter-1">skip</a>'''
+
+    calls = []
+    def fetch(url, hosts, byte_limit):
+        calls.append((url, hosts, byte_limit))
+        return Response()
+    results = provider.search("Example", fetch)
+    assert results == [{"id": "example", "title": "Example Manhwa", "url": "https://aquamanga.io/manga/example"}]
+    assert "s=Example" in calls[0][0]
+
+    Response.url = "https://aquamanga.io/manga/example"
+    Response.text = '''<a href="/manga/example/chapter-12">Chapter 12</a>
+                       <a href="/manga/example/chapter-11">Chapter 11</a>
+                       <a href="https://evil.example/manga/example/chapter-10">bad</a>'''
+    chapters = provider.chapters("example", fetch)
+    assert [chapter["chapter"] for chapter in chapters] == ["Chapter 12", "Chapter 11"]
+    assert all(chapter["url"].startswith("https://aquamanga.io/") for chapter in chapters)
+
+    Response.text = '''<div class="reading-content">
+        <img class="wp-manga-page-image" src=" https://aquamanga.io/wp-content/uploads/WP-manga/data//abc/01.webp">
+        <img class="wp-manga-page-image" src="/wp-content/uploads/WP-manga/data//abc/02.webp">
+        <img class="wp-manga-page-image" src="http://aquamanga.io/wp-content/uploads/insecure.webp">
+        <img src="https://aquamanga.io/wp-content/uploads/2026/10/cover-150x150.jpg">
+      </div>'''
+    parsed = provider.parse_chapter(Response.text, "https://aquamanga.io/manga/example/chapter-12")
+    assert parsed["source"] == "aquareader"
+    assert [page["index"] for page in parsed["pages"]] == [1, 2]
+    assert all(page["image"].startswith("https://aquamanga.io/") for page in parsed["pages"])
+    assert all(not page["image"].endswith("150x150.jpg") for page in parsed["pages"])
+
+
+def test_aquareader_load_chapter_rejects_non_chapter_urls():
+    provider = AquaReaderProvider()
+    with pytest.raises(ValueError, match="Aqua Reader"):
+        provider.load_chapter("https://aquamanga.io/manga/example", lambda *args: None)

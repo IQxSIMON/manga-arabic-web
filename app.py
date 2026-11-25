@@ -99,6 +99,9 @@ def protect_local_http_authority():
     except ValueError:
         configured_host = "127.0.0.1"
     allowed_hosts = {"localhost", "127.0.0.1", configured_host}
+    preview_host = os.getenv("PREVIEW_ALLOWED_HOST", "").strip().casefold()
+    if preview_host:
+        allowed_hosts.add(preview_host)
     if hostname not in allowed_hosts:
         return jsonify(error="رفض الطلب لأن اسم المضيف لا يطابق عنوان التطبيق المحلي."), 400
 
@@ -2844,14 +2847,8 @@ def _ocr_timing_breakdown(ocr_result):
     residual = None
     if isinstance(elapsed, (int, float)) and elapsed >= 0 and len(measured) == 5:
         residual = round(max(0.0, elapsed - sum(measured)), 4)
-    return {
+    timing = {
         "bubble_detection_and_ocr_seconds": bubble_seconds,
-        "bubble_detection_seconds": ocr_result.get("bubble_detection_seconds"),
-        "bubble_ocr_seconds": ocr_result.get("bubble_ocr_seconds"),
-        "bubble_split_detector_seconds": ocr_result.get("bubble_split_detector_seconds", 0),
-        "bubble_split_count": ocr_result.get("bubble_split_count", 0),
-        "malformed_bubble_recognition_seconds": ocr_result.get("malformed_bubble_recognition_seconds", 0),
-        "suspicious_bubble_line_retry_seconds": ocr_result.get("suspicious_bubble_line_retry_seconds", 0),
         "speech_bubble_mask_count": ocr_result.get("speech_bubble_mask_count"),
         "speech_bubble_masks_with_primary_ocr": ocr_result.get("speech_bubble_masks_with_primary_ocr"),
         "speech_bubble_masks_without_primary_ocr": ocr_result.get("speech_bubble_masks_without_primary_ocr"),
@@ -2866,6 +2863,14 @@ def _ocr_timing_breakdown(ocr_result):
         "comic_detector_region_count": ocr_result.get("comic_detector_region_count", 0),
         "comic_detector_ocr_line_count": ocr_result.get("comic_detector_ocr_line_count", 0),
     }
+    # Optional sub-stage keys are reported only when the pipeline measured them.
+    for key in ("bubble_detection_seconds", "bubble_ocr_seconds",
+                "bubble_split_detector_seconds", "bubble_split_count",
+                "malformed_bubble_recognition_seconds",
+                "suspicious_bubble_line_retry_seconds"):
+        if key in ocr_result:
+            timing[key] = ocr_result[key]
+    return timing
 
 
 def _record_translation_event(event_type, source_text, target_text, engine_id, *,

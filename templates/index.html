@@ -3,32 +3,90 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101823">
-  <title>قارئ ويب تون عربي</title>
+  <meta name="theme-color" content="#0a0f1a">
+  <meta name="description" content="منصة عربية لترجمة أعمال الويب تون تلقائياً: الصق رابط الفصل أو ابحث عن العمل، واقرأ الصفحات المترجمة بالتمرير العمودي.">
+  <title>قارئ ويب تون عربي — ترجمة الفصول تلقائياً</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/reader.css">
 </head>
 <body>
+  <div class="bg-glow" aria-hidden="true"></div>
   <main class="app">
     <header class="brand">
       <div class="brand-mark" aria-hidden="true">ع</div>
-      <div><h1>قارئ ويب تون عربي</h1><p>الصق رابط الفصل، واترك الباقي للموقع.</p></div>
+      <div><h1>قارئ ويب تون عربي</h1><p>الصق رابط الفصل، أو ابحث عن العمل، واقرأه مترجماً.</p></div>
     </header>
-    <form id="chapterForm" class="link-panel">
-      <label for="chapterUrl">رابط الفصل</label>
-      <div class="url-row">
-        <input id="chapterUrl" type="url" dir="ltr" autocomplete="url" required placeholder="https://example.com/.../chapter-1">
-        <button id="translateBtn" type="submit">ترجمة الفصل</button>
+
+    <nav class="site-nav" aria-label="أقسام الموقع">
+      <a href="#translate" class="nav-link is-active">ترجمة فصل</a>
+      <a href="#explore" class="nav-link">استكشاف المصادر</a>
+      <a href="#library" class="nav-link">مكتبتي</a>
+    </nav>
+
+    <section id="translate" aria-labelledby="translateTitle">
+      <h2 id="translateTitle" class="section-title">ترجمة فصل مباشرة</h2>
+      <form id="chapterForm" class="link-panel">
+        <label for="chapterUrl">رابط الفصل</label>
+        <div class="url-row">
+          <input id="chapterUrl" type="url" dir="ltr" autocomplete="url" required placeholder="https://example.com/.../chapter-1">
+          <button id="translateBtn" type="submit">ترجمة الفصل</button>
+        </div>
+        <div id="progressTrack" class="progress-track" hidden>
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <p class="hint">تبدأ المعالجة بمجرد لصق الرابط. ستظهر الصفحات تدريجياً بعد اكتمال ترجمتها ورسم العربية.</p>
+      </form>
+    </section>
+
+    <section id="explore" aria-labelledby="exploreTitle">
+      <h2 id="exploreTitle" class="section-title">استكشاف المصادر</h2>
+      <p class="hint">ابحث عن عمل بالعنوان الإنجليزي، اختر الفصل، وسيُستورد إلى مكتبتك للترجمة والقراءة.</p>
+      <div class="explore-panel">
+        <div class="url-row">
+          <select id="exploreSource" aria-label="المصدر"></select>
+          <input id="exploreQuery" type="search" placeholder="اسم العمل بالإنجليزية…" aria-label="بحث عن عمل">
+          <button id="exploreSearchBtn" type="button">بحث</button>
+        </div>
+        <p id="exploreStatus" class="hint" role="status" aria-live="polite"></p>
+        <div id="exploreResults" class="explore-results"></div>
+        <div id="chapterListPanel" class="chapter-list-panel" hidden>
+          <h3 id="chapterListTitle" class="subsection-title"></h3>
+          <ul id="chapterList" class="chapter-list"></ul>
+        </div>
       </div>
-      <p class="hint">تبدأ المعالجة بمجرد لصق الرابط. ستظهر الصفحات بعد اكتمال ترجمتها ورسم العربية.</p>
-    </form>
+    </section>
+
+    <section id="library" aria-labelledby="libraryTitle">
+      <h2 id="libraryTitle" class="section-title">مكتبتي</h2>
+      <p class="hint">الفصول المستوردة والمترجمة محفوظة هنا على الخادم — عد إليها في أي وقت.</p>
+      <div id="libraryList" class="library-grid" aria-live="polite">جارٍ التحميل…</div>
+    </section>
+
+    <section id="readerView" class="reader-view" hidden aria-label="قارئ الفصل">
+      <div class="reader-toolbar">
+        <button id="readerClose" type="button">رجوع</button>
+        <h3 id="readerTitle" class="subsection-title"></h3>
+      </div>
+      <p id="readerStatus" class="hint" role="status" aria-live="polite"></p>
+      <div id="readerPages" class="pages"></div>
+    </section>
+
     <section class="sources-panel" aria-labelledby="sourcesTitle">
-      <h2 id="sourcesTitle">المصادر المتوافقة</h2>
+      <h2 id="sourcesTitle" class="section-title">المصادر المتوافقة</h2>
       <p class="hint">تظهر هنا المواقع التي يتوفر لها جلب مباشر للفصول الإنجليزية.</p>
       <div id="sourceList" class="source-list" aria-live="polite">جارٍ تحميل القائمة…</div>
     </section>
+
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <section id="pages" class="pages" aria-label="صفحات الفصل المترجمة"></section>
+
+    <footer class="site-footer">
+      <p>مشروع ترجمة الويب تون العربي — المعالجة تتم على الخادم، والفصول تُحفظ في مكتبتك المحلية.</p>
+    </footer>
   </main>
   <script src="/static/reader.js" defer></script>
+  <script src="/static/site.js" defer></script>
 </body>
 </html>

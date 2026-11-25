@@ -452,6 +452,43 @@ class LocalRapidOCR:
             region["ocr_suspicious_near_words"] = suspicious
         return region
 
+    def _is_unique_short_word_correction(self, unknown_token, replacement):
+        """True when `replacement` is the only plausible short-word fix.
+
+        A 2-4 letter leading token may only be auto-corrected when exactly one
+        dictionary word of that span is within edit distance 2; otherwise the
+        intended word is ambiguous and the region keeps its review flag.
+        """
+        spellchecker = self._get_spellchecker()
+        if spellchecker is None or not spellchecker:
+            return False
+        token = str(unknown_token).casefold()
+        candidate = str(replacement).casefold()
+        if not 2 <= len(token) <= 4 or candidate not in spellchecker:
+            return False
+        matches = {
+            word for word in spellchecker
+            if isinstance(word, str) and 2 <= len(word) <= 4
+            and self._word_distance(token, word.casefold()) <= 2
+        }
+        return matches == {candidate}
+
+    @staticmethod
+    def _word_distance(left, right):
+        if left == right:
+            return 0
+        previous = list(range(len(right) + 1))
+        for i, left_char in enumerate(left, 1):
+            current = [i]
+            for j, right_char in enumerate(right, 1):
+                current.append(min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (left_char != right_char),
+                ))
+            previous = current
+        return previous[-1]
+
     def _rescue_suspicious_bubble_region_from_line_boxes(self, image, region):
         """Re-read flagged bubble text from its detected line boxes, at 2x scale.
 
@@ -573,11 +610,27 @@ class LocalRapidOCR:
                 or self.is_likely_nonverbal_effect(candidate)):
             return False
 
-        old_letters = "".join(re.findall(r"[A-Za-z]", original)).casefold()
-        new_letters = "".join(re.findall(r"[A-Za-z]", candidate)).casefold()
         minimum_similarity = (
             0.90 if "unrecognized_short_leading_word_in_bubble" in reasons else 0.78
         )
+        if recovered_unknown_word:
+            # The flagged leading token is expected to change, so similarity is
+            # measured on the rest of the bubble, and only when the dictionary
+            # offers exactly one plausible correction for that token.
+            if (len(suspicious_unknowns) != 1
+                    or not self._is_unique_short_word_correction(
+                        next(iter(suspicious_unknowns)),
+                        candidate_parts[0].split()[0])):
+                return False
+            old_letters = "".join(
+                re.findall(r"[A-Za-z]", " ".join(original.split()[1:]))
+            ).casefold()
+            new_letters = "".join(
+                re.findall(r"[A-Za-z]", " ".join(candidate.split()[1:]))
+            ).casefold()
+        else:
+            old_letters = "".join(re.findall(r"[A-Za-z]", original)).casefold()
+            new_letters = "".join(re.findall(r"[A-Za-z]", candidate)).casefold()
         if SequenceMatcher(None, old_letters, new_letters).ratio() < minimum_similarity:
             return False
 
@@ -603,6 +656,8 @@ class LocalRapidOCR:
             "ocr_rescued": True,
             "ocr_recovery_method": "suspicious_bubble_line_boxes",
         })
+        if recovered_unknown_word:
+            region["ocr_review_required"] = False
         return True
 
     @staticmethod

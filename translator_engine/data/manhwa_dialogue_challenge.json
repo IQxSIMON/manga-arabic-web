@@ -1,0 +1,170 @@
+[
+  {
+    "source": "Would Mom and Dad worry about me as much as he did?",
+    "target": "هل ستقلق عليّ أمي وأبي مثله؟",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "OBVIOUSLY.",
+    "target": "بالتأكيد.",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "I SHOULD HEAD TO THE SHADOW DUNGEON NOW.",
+    "target": "ينبغي عليّ التوجه إلى زنزانة الظلال الآن.",
+    "region_type": "speech_bubble",
+    "category": "fantasy_terminology",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Keep up the good work!",
+    "target": "أحسنت، واصل التقدم!",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "You've grown stronger since we last met.",
+    "target": "لقد صرت أقوى منذ آخر لقاء لنا.",
+    "region_type": "speech_bubble",
+    "category": "long_dialogue",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Don't you dare lay a finger on my brother!",
+    "target": "لا تجرؤ على لمس أخي!",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Break a leg out there.",
+    "target": "بالتوفيق في مباراتك.",
+    "region_type": "speech_bubble",
+    "category": "idiom",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "He spilled the beans about the raid.",
+    "target": "لقد أفشى سر الغارة.",
+    "region_type": "speech_bubble",
+    "category": "idiom",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Once in a blue moon, a gate opens above the city.",
+    "target": "فيما يحدث نادرًا، تُفتح بوابة فوق المدينة.",
+    "region_type": "external_text",
+    "category": "idiom",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "The cost of living hit an all-time high this year.",
+    "target": "بلغت كلفة المعيشة هذا العام أعلى مستوى لها على الإطلاق.",
+    "region_type": "external_text",
+    "category": "narration",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Ten years have passed since the first dungeon appeared.",
+    "target": "مرّت عشر سنوات منذ ظهور أول زنزانة.",
+    "region_type": "external_text",
+    "category": "narration",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "I can't just stand by and watch them suffer.",
+    "target": "لا يمكنني الوقوف مكتوف الأيدي وأنا أشاهدهم يتألمون.",
+    "region_type": "speech_bubble",
+    "category": "long_dialogue",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "The mana core within him began to resonate.",
+    "target": "بدأت نواة المانا بداخله بالرنين.",
+    "region_type": "external_text",
+    "category": "fantasy_terminology",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "HUNTER LICENSE VERIFIED. RANK S.",
+    "target": "تمّ التحقق من رخصة الصيّاد. المرتبة S.",
+    "region_type": "external_text",
+    "category": "fantasy_terminology",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "You knew this day would come, didn't you?",
+    "target": "كنت تعلم أن هذا اليوم سيأتي، أليس كذلك؟",
+    "region_type": "speech_bubble",
+    "category": "long_dialogue",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "STAY BACK!",
+    "target": "ابقَ مكانك!",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Every healer in the guild refused to treat him.",
+    "target": "رفض كل معالج في النقابة أن يعالجه.",
+    "region_type": "external_text",
+    "category": "narration",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "She bit the bullet and signed the contract.",
+    "target": "تحمّلت الأمر بشجاعة ووقّعت العقد.",
+    "region_type": "speech_bubble",
+    "category": "idiom",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "If we don't retreat now, we're all dead meat.",
+    "target": "إن لم ننسحب الآن، فسنكون جميعًا طُعمًا للموت.",
+    "region_type": "speech_bubble",
+    "category": "idiom",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "My dagger is the only family I have left.",
+    "target": "خنجري هو العائلة الوحيدة التي بقيت لي.",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "WARNING: GATE SURGE DETECTED IN SECTOR 7.",
+    "target": "تحذير: تم رصد اندفاع بوابة في القطاع السابع.",
+    "region_type": "external_text",
+    "category": "fantasy_terminology",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Please, take my hand — I won't let you fall.",
+    "target": "أرجوك، أمسك بيدي — لن أدعك تسقط.",
+    "region_type": "speech_bubble",
+    "category": "long_dialogue",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "The shadow army marched without a single sound.",
+    "target": "سار جيش الظلّ من دون أدنى صوت.",
+    "region_type": "external_text",
+    "category": "narration",
+    "reference_status": "draft_needs_human_review"
+  },
+  {
+    "source": "Did you really think a door would stop me?",
+    "target": "أظننتَ حقًا أن بابًا سيوقفني؟",
+    "region_type": "speech_bubble",
+    "category": "emotion",
+    "reference_status": "draft_needs_human_review"
+  }
+]

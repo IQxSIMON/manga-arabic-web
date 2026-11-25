@@ -391,9 +391,7 @@ def test_bubble_detection_disk_cache_roundtrip_skips_second_inference(monkeypatc
         "ocr_boxes": [[135, 72, 52, 12]], "translated": "أهلاً بك",
     }
 
-    with tempfile.TemporaryDirectory(
-        dir=r"D:\MangaArabic\manga-arabic-web\ocr_test_results"
-    ) as cache_dir:
+    with tempfile.TemporaryDirectory() as cache_dir:
         _cold, cold_report = render_translated_page(
             encoded.getvalue(), [region], bubble_cache_dir=cache_dir,
         )

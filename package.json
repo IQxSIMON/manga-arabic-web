@@ -1,0 +1,11 @@
+{
+  "name": "manga-arabic-web",
+  "private": true,
+  "scripts": {
+    "start": "MANGA_ARABIC_FONT=/usr/share/fonts/truetype/freefont/FreeSerif.ttf PORT=3000 PREVIEW_ALLOWED_HOST=preview-check.vercel.run .venv/bin/python app.py",
+    "dev": "MANGA_ARABIC_FONT=/usr/share/fonts/truetype/freefont/FreeSerif.ttf PORT=3000 PREVIEW_ALLOWED_HOST=preview-check.vercel.run .venv/bin/python app.py"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

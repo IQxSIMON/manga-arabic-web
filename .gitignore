@@ -14,3 +14,4 @@ android-app/sdk-install.log
 android-kotatsu-redo/.gradle/
 android-kotatsu-redo/local.properties
 android-kotatsu-redo/**/build/
+node_modules/
