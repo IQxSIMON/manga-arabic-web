@@ -72,8 +72,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        // 10.0.2.2 is the emulator alias for the host machine; change to the
-        // deployed Vercel URL when the backend is live.
-        const val SITE_URL = "http://10.0.2.2:3000/"
+        const val SITE_URL = "https://manga-arabic-web-acem-d0c8.vercel.app/"
     }
 }
