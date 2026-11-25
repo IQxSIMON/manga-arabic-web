@@ -1,0 +1,13 @@
+.venv/
+node_modules/
+android-app/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.git/
+dist/
+test-images/
+tools/
+instance/
+*.md
+.mlai/
