@@ -15,3 +15,9 @@ android-kotatsu-redo/.gradle/
 android-kotatsu-redo/local.properties
 android-kotatsu-redo/**/build/
 node_modules/
+
+# Android build outputs
+android-app/build/
+android-app/app/build/
+android-app/.gradle/
+android-app/local.properties
