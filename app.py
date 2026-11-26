@@ -402,6 +402,12 @@ def request_too_large(_error):
     return jsonify(error="حجم الطلب كبير جداً. الحد الأقصى لاستيراد الفصل 180 MB."), 413
 
 
+@app.errorhandler(sqlite3.Error)
+def storage_unavailable(error):
+    app.logger.exception("Library storage unavailable", exc_info=error)
+    return jsonify(error="تعذر الوصول إلى مخزن المكتبة على الخادم؛ أعد المحاولة بعد لحظات."), 503
+
+
 @contextmanager
 def _page_processing_lock(chapter_id, page_number):
     """Serialize concurrent OCR/translation requests for one saved page."""

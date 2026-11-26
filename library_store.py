@@ -17,10 +17,34 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+_resolved_root: tuple[str, Path] | None = None
+
+
+def _is_writable(directory: Path) -> bool:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        probe = directory / ".write-probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def library_root() -> Path:
-    configured = os.getenv("MANGA_LIBRARY_DIR")
-    root = Path(configured) if configured else Path(__file__).resolve().parent / "instance" / "library"
+    global _resolved_root
+    configured = os.getenv("MANGA_LIBRARY_DIR") or ""
+    if _resolved_root is not None and _resolved_root[0] == configured:
+        return _resolved_root[1]
+    if configured:
+        root = Path(configured)
+    else:
+        root = Path(__file__).resolve().parent / "instance" / "library"
+        if not _is_writable(root):
+            # Serverless hosts (Vercel, Lambda) ship a read-only bundle; /tmp is the only writable place.
+            root = Path(tempfile.gettempdir()) / "manga-arabic-library"
     root.mkdir(parents=True, exist_ok=True)
+    _resolved_root = (configured, root)
     return root
 
 
