@@ -8,7 +8,7 @@ let previewObjectUrls=[];
 const say=text=>{statusBox.textContent=text||""};
 async function jsonPost(path,payload){
   const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-  const data=await response.json();
+  const data=await response.json().catch(()=>{throw new Error("انقطع الخادم أثناء المعالجة (تجاوز حد الوقت). أعد المحاولة وسيُستكمل من حيث توقّف.")});
   if(!response.ok)throw new Error(data.error||"تعذرت معالجة الطلب.");
   return data;
 }
@@ -50,10 +50,19 @@ async function processChapter(){
       }
     }
     if(!allRegions.length)throw new Error("لم يُعثر على نص قابل للترجمة في هذا الفصل.");
-    say(`اكتمل الكشف في ${chapter.pages.length} صفحة. Gemini 3.5 يراجع النصوص على دفعات، ثم Gemini 3.1 يترجم الفصل...`);
-    const translated=await jsonPost("/api/translate/chapter",{
-      chapter_title:chapter.title,referer:url,cloud_ocr:true,regions:allRegions
-    });
+    say(`اكتمل الكشف في ${chapter.pages.length} صفحة. Gemini يراجع النصوص ويترجم الفصل على دفعات داخل الخادم...`);
+    let translated=null;
+    for(let attempt=0;attempt<40;attempt+=1){
+      translated=await jsonPost("/api/translate/chapter",{
+        chapter_title:chapter.title,referer:url,cloud_ocr:true,regions:allRegions,time_budget:45
+      });
+      if(!translated.partial)break;
+      const progress=translated.progress||{};
+      say(progress.stage==="translation"
+        ?"اكتملت مراجعة النصوص. جارٍ ترجمة الفصل عبر Gemini..."
+        :`جارٍ مراجعة النصوص على الخادم: ${progress.completed_regions??0}/${progress.total_regions??"—"} منطقة...`);
+    }
+    if(!translated||translated.partial)throw new Error("تعذّر إكمال الترجمة ضمن الوقت المتاح. أعد المحاولة وسيُستكمل من حيث توقّف.");
     const resultById=new Map((translated.translations||[]).map(item=>[item.id,item]));
     let shown=0;let skipped=0;
     const RENDER_CONCURRENCY=4;

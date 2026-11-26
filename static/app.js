@@ -563,9 +563,28 @@ async function openLocalChapter(chapterId) {
       button.disabled = true;
       button.textContent = "جارٍ التعرف والترجمة على الجهاز…";
       try {
-        const r = await fetch(`/api/library/${encodeURIComponent(chapterId)}/pages/${page.page_number}/translate`, {method: "POST"});
-        const out = await r.json();
-        if (!r.ok) throw new Error(out.error || "تعذرت معالجة الصفحة.");
+        let out = null;
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          const r = await fetch(`/api/library/${encodeURIComponent(chapterId)}/pages/${page.page_number}/translate`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({time_budget: 45}),
+          });
+          let parsed = null;
+          try {
+            parsed = await r.json();
+          } catch (_error) {
+            throw new Error("انقطعت المعالجة على الخادم قبل اكتمالها. التقدم محفوظ — أعد المحاولة للاستكمال.");
+          }
+          out = parsed;
+          if (!r.ok) throw new Error(out.error || "تعذرت معالجة الصفحة.");
+          if (out.processing_status === "translation_in_progress") {
+            const progress = out.progress || {};
+            button.textContent = `جارٍ الترجمة… اكتمل ${progress.completed_regions ?? 0} من ${progress.total_regions ?? "—"} منطقة`;
+            continue;
+          }
+          break;
+        }
         renderLocalResult(resultBox, out, chapterId, page.page_number);
         const hasDetectedRegions = Array.isArray(out.translated_lines) && out.translated_lines.length > 0;
         page.result = out;
@@ -1690,7 +1709,9 @@ loadBtn.addEventListener("click", async () => {
               series_type: document.getElementById("sourceSeriesType").value,
               reading_direction: "ltr"})
           });
-          const out = await r.json();
+          const out = await r.json().catch(() => {
+            throw new Error("انقطعت المعالجة على الخادم قبل اكتمالها (تجاوزت حد زمن الخادم). جرّب صفحات أقل أو أعد المحاولة.");
+          });
           if (!r.ok) throw new Error(out.error || "فشلت المعالجة.");
           result.replaceChildren();
           const translatedTitle = document.createElement("h4");

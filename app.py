@@ -159,6 +159,31 @@ _OCR_CACHE_LOCK = threading.RLock()
 REMOTE_TRANSLATION_PROGRESS = OrderedDict()
 REMOTE_TRANSLATION_PROGRESS_MAX_ENTRIES = 128
 _REMOTE_TRANSLATION_PROGRESS_LOCK = threading.RLock()
+# Checkpoint for /api/translate/chapter: fingerprint -> {"ocr_by_id", "requests_sent", "usage"}.
+# Lets the client retry the same chapter in several requests within the serverless time limit.
+CHAPTER_TRANSLATION_CACHE = OrderedDict()
+CHAPTER_TRANSLATION_CACHE_MAX_ENTRIES = 8
+_CHAPTER_TRANSLATION_CACHE_LOCK = threading.RLock()
+
+
+def _chapter_translation_cache_get(fingerprint):
+    with _CHAPTER_TRANSLATION_CACHE_LOCK:
+        entry = CHAPTER_TRANSLATION_CACHE.get(fingerprint)
+        if entry is not None:
+            CHAPTER_TRANSLATION_CACHE.move_to_end(fingerprint)
+        return entry
+
+
+def _chapter_translation_cache_put(fingerprint, ocr_by_id, requests_sent, usage):
+    with _CHAPTER_TRANSLATION_CACHE_LOCK:
+        CHAPTER_TRANSLATION_CACHE[fingerprint] = {
+            "ocr_by_id": ocr_by_id,
+            "requests_sent": requests_sent,
+            "usage": usage,
+        }
+        CHAPTER_TRANSLATION_CACHE.move_to_end(fingerprint)
+        while len(CHAPTER_TRANSLATION_CACHE) > CHAPTER_TRANSLATION_CACHE_MAX_ENTRIES:
+            CHAPTER_TRANSLATION_CACHE.popitem(last=False)
 REMOTE_RENDER_CACHE_TEMP = tempfile.TemporaryDirectory(prefix="manga-arabic-previews-")
 REMOTE_RENDER_CACHE_DIR = Path(REMOTE_RENDER_CACHE_TEMP.name)
 REMOTE_RENDER_CACHE = OrderedDict()  # Preview ID -> (temporary path, byte size)
@@ -1363,8 +1388,13 @@ def _page_translation_workers():
     return min(4, max(1, configured))
 
 
-def process_local_chapter_page(chapter_id, page_number):
+def process_local_chapter_page(chapter_id, page_number, time_budget=None):
     page_started = time.perf_counter()
+    deadline = page_started + time_budget if time_budget else None
+
+    def budget_exceeded():
+        return deadline is not None and time.perf_counter() > deadline
+
     chapter = library_store.get_chapter(chapter_id)
     stored = library_store.read_page(chapter_id, page_number)
     if chapter is None or stored is None:
@@ -1558,6 +1588,9 @@ def process_local_chapter_page(chapter_id, page_number):
         }
         library_store.save_page_result(chapter_id, page_number, result)
 
+    if deadline is not None and budget_exceeded() and result.get("processing_status") != "complete":
+        return result, None
+
     completed_region_count = sum(_region_is_complete(line) for line in translated_lines)
     # Scanlation credits and series bylines are often detected as external text.
     # Keep those regions in the source form; translated creator lists are not
@@ -1646,12 +1679,16 @@ def process_local_chapter_page(chapter_id, page_number):
     in_flight = {}
     failures = []
     pause_requested = False
+    budget_yielded = False
 
     def submit_available(pool):
-        nonlocal next_pending, pause_requested
+        nonlocal next_pending, pause_requested, budget_yielded
         while next_pending < len(translation_units) and len(in_flight) < workers:
             if library_store.is_chapter_paused(chapter_id):
                 pause_requested = True
+                break
+            if budget_exceeded():
+                budget_yielded = True
                 break
             unit = translation_units[next_pending]
             next_pending += 1
@@ -1722,6 +1759,14 @@ def process_local_chapter_page(chapter_id, page_number):
         + time.perf_counter() - translation_run_started, 4
     )
     update_local_page_runtime(chapter_id, page_number)
+    if budget_yielded and not failures and not pause_requested:
+        result["processing_status"] = "translation_in_progress"
+        result["progress"] = {"stage": "translation",
+                              "completed_regions": completed_region_count,
+                              "total_regions": len(translated_lines)}
+        result["page_processing_elapsed_seconds"] = round(time.perf_counter() - page_started, 4)
+        library_store.save_page_result(chapter_id, page_number, result)
+        return result, None
     if failures:
         failed_index, failed_exception = failures[0]
         result["last_translation_error"] = {
@@ -1763,8 +1808,13 @@ def process_local_chapter_page(chapter_id, page_number):
 @app.post("/api/library/<chapter_id>/pages/<int:page_number>/translate")
 def library_translate_page(chapter_id, page_number):
     try:
+        payload = request.get_json(silent=True) or {}
+        requested_budget = payload.get("time_budget")
+        time_budget = requested_budget if isinstance(requested_budget, (int, float)) else None
+        if time_budget is not None and not 5 <= time_budget <= 55:
+            time_budget = 50
         with _page_processing_lock(chapter_id, page_number):
-            result, error = process_local_chapter_page(chapter_id, page_number)
+            result, error = process_local_chapter_page(chapter_id, page_number, time_budget=time_budget)
         if error:
             return error
         return jsonify(**result)
@@ -3980,6 +4030,36 @@ def translate_remote_chapter_once():
         "usage": [],
     }
     ocr_by_id = {item["id"]: item for item in detector_regions}
+    time_budget = data.get("time_budget")
+    time_budget = time_budget if isinstance(time_budget, (int, float)) and 10 <= time_budget <= 55 else 45
+    deadline = time.perf_counter() + time_budget
+    fingerprint_source = json.dumps(
+        {"title": str(data.get("chapter_title", ""))[:300], "regions": detector_regions},
+        ensure_ascii=False, sort_keys=True,
+    )
+    fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
+    cached_job = _chapter_translation_cache_get(fingerprint)
+    if cached_job is not None:
+        ocr_by_id = {item["id"]: item for item in detector_regions}
+        ocr_by_id.update(cached_job["ocr_by_id"])
+        ocr_metrics["requests_sent"] = cached_job.get("requests_sent", 0)
+        ocr_metrics["usage"] = list(cached_job.get("usage", []))
+
+    def ocr_partial_response():
+        cloud_read = sum(
+            ocr_by_id[item["id"]].get("cloud_ocr_status") == "complete"
+            for item in detector_regions if item["id"] in ocr_by_id
+        )
+        ocr_metrics["regions_cloud_read"] = cloud_read
+        ocr_metrics["regions_fallback"] = len(detector_regions) - cloud_read
+        return jsonify(
+            partial=True, fingerprint=fingerprint,
+            progress={"stage": "cloud_ocr",
+                      "completed_regions": len([i for i in detector_regions if i["id"] in ocr_by_id and "cloud_ocr_status" in ocr_by_id[i["id"]]]),
+                      "total_regions": len(detector_regions)},
+            ocr_metrics=ocr_metrics,
+        )
+
     if data.get("cloud_ocr", True):
         referer = str(data.get("referer", "")).strip()
         if not referer or not public_https_url(referer):
@@ -4002,16 +4082,45 @@ def translate_remote_chapter_once():
                 last_page["bytes"] = response.content
             return last_page["bytes"]
 
+        pending = [
+            item for item in detector_regions
+            if "cloud_ocr_status" not in ocr_by_id.get(item["id"], {})
+        ]
         try:
-            cloud_regions, ocr_metrics = recognize_regions_with_gemini(
-                detector_regions, load_source_page, api_key,
-            )
-            ocr_by_id = {item["id"]: item for item in cloud_regions}
+            for start in range(0, len(pending), 20):
+                if time.perf_counter() > deadline:
+                    _chapter_translation_cache_put(
+                        fingerprint, dict(ocr_by_id),
+                        ocr_metrics["requests_sent"], ocr_metrics["usage"],
+                    )
+                    return ocr_partial_response()
+                chunk = pending[start:start + 20]
+                cloud_regions, chunk_metrics = recognize_regions_with_gemini(
+                    chunk, load_source_page, api_key,
+                )
+                ocr_by_id.update({item["id"]: item for item in cloud_regions})
+                ocr_metrics["requests_sent"] += chunk_metrics.get("requests_sent", 0)
+                ocr_metrics["usage"].extend(chunk_metrics.get("usage", []))
         except (ValueError, RuntimeError, OSError, requests.RequestException) as exc:
+            _chapter_translation_cache_put(
+                fingerprint, dict(ocr_by_id),
+                ocr_metrics["requests_sent"], ocr_metrics["usage"],
+            )
             return jsonify(
                 error=f"تعذر إكمال OCR السحابي قبل الترجمة: {exc}",
                 ocr_model="gemini-3.5-flash-lite",
+                partial=True, fingerprint=fingerprint,
             ), 502
+        if time.perf_counter() > deadline:
+            _chapter_translation_cache_put(
+                fingerprint, dict(ocr_by_id),
+                ocr_metrics["requests_sent"], ocr_metrics["usage"],
+            )
+            return ocr_partial_response()
+        _chapter_translation_cache_put(
+            fingerprint, dict(ocr_by_id),
+            ocr_metrics["requests_sent"], ocr_metrics["usage"],
+        )
 
     excluded_categories = {
         "sound_effect", "watermark", "ui", "decorative", "non_english", "uncertain",
@@ -4075,6 +4184,13 @@ def translate_remote_chapter_once():
         + "\nREGIONS:\n" + json.dumps(normalized, ensure_ascii=False)
     )
     started = time.perf_counter()
+    if time.perf_counter() > deadline:
+        return jsonify(
+            partial=True, fingerprint=fingerprint,
+            progress={"stage": "translation", "completed_regions": 0,
+                      "total_regions": len(normalized)},
+            ocr_metrics=ocr_metrics,
+        )
     translation_request_logs = []
     response = None
     for attempt in range(1, 4):
@@ -4094,6 +4210,8 @@ def translate_remote_chapter_once():
             if response.ok or response.status_code == 429:
                 break
             if response.status_code not in {500, 502, 503, 504} or attempt == 3:
+                break
+            if time.perf_counter() > deadline:
                 break
             retry_after = response.headers.get("Retry-After", "")
             try:
