@@ -212,7 +212,8 @@
     readerView.scrollIntoView({ behavior: "smooth" });
     try {
       const data = await api(`/api/library/${chapter.id}`);
-      const pages = Array.isArray(data.pages) ? data.pages : [];
+      const detail = data.chapter || data;
+      const pages = Array.isArray(detail.pages) ? detail.pages : [];
       setText(readerStatus, pages.length ? `${pages.length} صفحة.` : "لا صفحات محفوظة لهذا الفصل.");
       for (const page of pages) {
         const figure = document.createElement("figure");
@@ -220,7 +221,14 @@
         const img = document.createElement("img");
         img.loading = "lazy";
         img.alt = `صفحة ${page.page_number}`;
-        img.src = `/api/library/${chapter.id}/pages/${page.page_number}/rendered`;
+        const renderedSrc = page.rendered_url || `/api/library/${chapter.id}/pages/${page.page_number}/rendered`;
+        const originalSrc = page.image_url || `/api/library/${chapter.id}/pages/${page.page_number}/image`;
+        img.src = renderedSrc;
+        img.addEventListener("error", () => {
+          if (img.dataset.fallback) { figure.remove(); return; }
+          img.dataset.fallback = "1";
+          img.src = originalSrc;
+        }, { once: false });
         figure.appendChild(img);
         readerPages.appendChild(figure);
       }

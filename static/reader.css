@@ -98,9 +98,10 @@ button:disabled{opacity:.55;cursor:wait;transform:none}
 .source-list .hint{margin:0}
 
 /* reader */
-.pages{display:grid;gap:14px}
+.pages{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.page > img{display:block;width:100%;height:auto}
 .page{
-  width:100%;height:auto;display:block;border-radius:12px;
+  width:100%;height:auto;display:block;border-radius:12px;margin:0;
   background:#121c28;
   box-shadow:0 14px 40px rgba(0,0,0,.4);
   opacity:0;transform:translateY(14px);
