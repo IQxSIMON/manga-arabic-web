@@ -1749,7 +1749,12 @@ def process_local_chapter_page(chapter_id, page_number, time_budget=None):
                         raise RuntimeError("The translation engine returned a mismatched region count.")
                     for (index, line, _context), translated in zip(unit, outputs):
                         if not isinstance(translated, str) or not has_arabic_letters(translated):
-                            raise RuntimeError("The translation engine did not return usable Arabic text.")
+                            # Gemini deliberately returns empty strings for credits,
+                            # watermarks and sound effects; skip those instead of
+                            # failing the whole unit.
+                            line["translated"] = ""
+                            line["translation_skipped"] = True
+                            continue
                         line["translated"] = translated.strip()
                         line["translation_elapsed_seconds"] = round(elapsed, 4)
                         line.pop("translation_attempt_elapsed_seconds", None)
