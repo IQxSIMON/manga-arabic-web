@@ -108,6 +108,11 @@ class MangaDexProvider:
             raise ValueError("رابط خادم MangaDex غير آمن.")
         filenames = chapter_data.get("data") or []
         content_hash = chapter_data.get("hash")
+        if not filenames and attributes.get("externalUrl"):
+            raise ValueError(
+                "هذا الفصل مستضاف لدى الناشر ولا يستضيفه MangaDex (صفحة ويب خارجية)، "
+                "لذا لا يمكن استيراد صوره إلى المكتبة. اختر فصلاً آخر من نفس العمل."
+            )
         if not content_hash or not filenames or len(filenames) > 300:
             raise ValueError("الفصل فارغ أو يتجاوز حد 300 صفحة.")
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", str(content_hash)) or any(

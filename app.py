@@ -76,13 +76,28 @@ def _same_request_origin(value):
     """Compare an Origin or Referer authority with the current local request."""
     try:
         parsed = urlparse(value)
-        if (parsed.scheme.casefold() != request.scheme.casefold() or not parsed.hostname
-                or parsed.username or parsed.password):
+        if not parsed.hostname or parsed.username or parsed.password:
             return False
         default_port = 443 if request.scheme.casefold() == "https" else 80
         expected = _request_authority(request.host, default_port=default_port)
         actual = (parsed.hostname.rstrip(".").casefold(), parsed.port or default_port)
-        return expected is not None and actual == expected
+        # The public preview tunnel forwards "host:port" while the browser
+        # origin has no port; compare authorities ignoring the incoming port.
+        expected_host = expected[0].rstrip(".").casefold() if expected else None
+        expected_port = expected[1] if expected else None
+        if expected_host is not None and actual[0] == expected_host and expected_port in (80, 443, 3000):
+            return True
+        # The Vite preview proxy rewrites Host to the local bind address, so an
+        # origin on the configured preview tunnel host is trusted even though
+        # the request authority is local.
+        allowed_hosts = {
+            part.strip().rstrip(".").casefold()
+            for part in os.getenv("PREVIEW_ALLOWED_HOST", "").split(",")
+            if part.strip()
+        }
+        if actual[0] in allowed_hosts and actual[1] in (80, 443, 3000):
+            return True
+        return expected_host is not None and actual == (expected_host, expected_port)
     except ValueError:
         return False
 
@@ -1704,7 +1719,7 @@ def process_local_chapter_page(chapter_id, page_number, time_budget=None):
                 for index, line, context in unit
             ]
             started = time.perf_counter()
-            future = pool.submit(_translate_index_region_group, requests_for_unit)
+            future = pool.submit(_translate_region_group_with_cloud_fallback, requests_for_unit)
             in_flight[future] = (unit, started)
 
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="manga-translate") as pool:
@@ -3397,6 +3412,78 @@ def _translate_index_region_group(items):
             kwargs["_pretranslated"] = batch_results[index]
         results.append(translate_text(item["text"], **kwargs))
     return results
+
+
+def _translate_region_group_gemini(items):
+    """Cloud fallback for one page-translation unit when the local model is missing."""
+    api_key = _gemini_api_key_from_local_settings()
+    if not api_key:
+        raise RuntimeError("مفتاح Gemini غير مضبوط في إعدادات الخادم، ومحرك الترجمة المحلي غير متاح.")
+    normalized = [
+        {"id": str(index), "text": item["text"],
+         "type": item.get("region_type", "speech_bubble")}
+        for index, item in enumerate(items, 1)
+        if str(item.get("text", "")).strip()
+    ]
+    if not normalized:
+        return ["" for _ in items]
+    prompt = (
+        "Translate the provided comic dialogue into natural, literary Arabic. "
+        "Do not translate sound effects, decorative lettering, watermarks, credits, "
+        "isolated UI labels, non-English text, or uncertain crops; return an empty "
+        "Arabic string for those. Translate dialogue, narration, captions, signs, and "
+        "phone text. Return only JSON with shape "
+        "{\"translations\":[{\"id\":string,\"translation\":string}]}. "
+        "Return every input id exactly once; never add or alter ids.\nREGIONS:\n"
+        + json.dumps(normalized, ensure_ascii=False)
+    )
+    response = None
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"responseMimeType": "application/json", "temperature": 0.25}},
+                timeout=(10, 60),
+            )
+            if response.ok or response.status_code != 429:
+                break
+            time.sleep(min(20.0, 5.0 * (2 ** attempt)))
+        except requests.RequestException:
+            if attempt == 2:
+                response = None
+            time.sleep(2.0)
+    if response is None or not response.ok:
+        raise RuntimeError("تعذرت الترجمة السحابية البديلة عبر Gemini.")
+    try:
+        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        decoded = json.loads(raw)
+        mapped = {
+            item["id"]: item["translation"].strip()
+            for item in decoded.get("translations", [])
+            if isinstance(item, dict) and isinstance(item.get("translation"), str)
+        }
+    except (KeyError, IndexError, TypeError, ValueError):
+        raise RuntimeError("وصل رد Gemini البديل لكن تنسيقه غير صالح.")
+    results = []
+    for index, item in enumerate(items, 1):
+        if not str(item.get("text", "")).strip():
+            results.append("")
+        else:
+            translated = mapped.get(str(index), "")
+            results.append(translated if has_arabic_letters(translated) else "")
+    return results
+
+
+def _translate_region_group_with_cloud_fallback(items):
+    try:
+        return _translate_index_region_group(items)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "unavailable" in message or "غير موجود" in message or "غير متاح" in message:
+            return _translate_region_group_gemini(items)
+        raise
 
 
 def set_translation_engine(engine_name):
