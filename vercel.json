@@ -5,7 +5,7 @@
       "src": "api/index.py",
       "use": "@vercel/python",
       "config": {
-        "includeFiles": "static/**,templates/**,translator_engine/data/**",
+        "includeFiles": "static/**,templates/**,translator_engine/data/**,translator_engine/models/**",
         "maxDuration": 60
       }
     }
