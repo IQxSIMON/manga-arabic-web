@@ -4445,5 +4445,10 @@ def remote_translation_preview(preview_id):
         return send_file(entry[0], mimetype="image/png", max_age=0)
 
 
+@app.get("/api/version")
+def api_version():
+    return jsonify(version=os.getenv("VERCEL_GIT_COMMIT_SHA", "local"))
+
+
 if __name__ == "__main__":
     app.run(host=resolve_local_bind_host(), port=int(os.getenv("PORT", "5000")), debug=False)
