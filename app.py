@@ -3158,24 +3158,33 @@ def _gemini_translate_single(text, context="", glossary_entries=None):
         + f"TEXT: {text}"
     )
     response = None
-    for attempt in range(3):
+    models = ("gemini-3.1-flash-lite", "gemini-3.1-flash")
+    for attempt in range(5):
+        model = models[min(1, attempt // 3)]
         try:
             response = requests.post(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                 headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
                 json={"contents": [{"parts": [{"text": prompt}]}],
                       "generationConfig": {"responseMimeType": "application/json", "temperature": 0.25}},
                 timeout=(10, 60),
             )
-            if response.ok or response.status_code != 429:
+            if response.ok:
                 break
-            time.sleep(min(20.0, 5.0 * (2 ** attempt)))
+            if response.status_code not in (429, 500, 503, 504):
+                app.logger.warning(
+                    "Gemini translation rejected: %s %s", response.status_code,
+                    response.text[:200],
+                )
+                break
+            time.sleep(min(20.0, 3.0 * (2 ** attempt)))
         except requests.RequestException:
-            if attempt == 2:
+            if attempt == 4:
                 response = None
             time.sleep(2.0)
     if response is None or not response.ok:
-        raise RuntimeError("تعذرت الترجمة السحابية عبر Gemini.")
+        status = getattr(response, "status_code", None)
+        raise RuntimeError(f"تعذرت الترجمة السحابية عبر Gemini (حالة {status}).")
     try:
         raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
         decoded = json.loads(raw)
@@ -3369,18 +3378,26 @@ def _translate_region_group_gemini(items):
         + json.dumps(normalized, ensure_ascii=False)
     )
     response = None
-    for attempt in range(3):
+    models = ("gemini-3.1-flash-lite", "gemini-3.1-flash")
+    for attempt in range(5):
+        model = models[min(1, attempt // 3)]
         try:
             response = requests.post(
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                 headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
                 json={"contents": [{"parts": [{"text": prompt}]}],
                       "generationConfig": {"responseMimeType": "application/json", "temperature": 0.25}},
                 timeout=(10, 60),
             )
-            if response.ok or response.status_code != 429:
+            if response.ok:
                 break
-            time.sleep(min(20.0, 5.0 * (2 ** attempt)))
+            if response.status_code not in (429, 500, 503, 504):
+                app.logger.warning(
+                    "Gemini translation rejected: %s %s", response.status_code,
+                    response.text[:200],
+                )
+                break
+            time.sleep(min(20.0, 3.0 * (2 ** attempt)))
         except requests.RequestException:
             if attempt == 2:
                 response = None
