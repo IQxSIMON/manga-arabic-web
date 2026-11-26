@@ -25,6 +25,10 @@ WINDOWS_FONTS = (
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
 )
 
+BUNDLED_FONTS = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+BUNDLED_REGULAR = BUNDLED_FONTS / "NotoSansArabic-Regular.ttf"
+BUNDLED_BOLD = BUNDLED_FONTS / "NotoSansArabic-Bold.ttf"
+
 
 def _font_path(bold: bool = False) -> Path:
     configured = os.getenv("MANGA_ARABIC_FONT")
@@ -34,7 +38,8 @@ def _font_path(bold: bool = False) -> Path:
         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
     )
     candidates = ([Path(configured)] if configured else []) + (
-        list(bold_candidates) + list(WINDOWS_FONTS) if bold else list(WINDOWS_FONTS)
+        [BUNDLED_BOLD] + list(bold_candidates) + list(WINDOWS_FONTS) if bold
+        else [BUNDLED_REGULAR] + list(WINDOWS_FONTS)
     )
     for candidate in candidates:
         if candidate.is_file():
