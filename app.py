@@ -3414,22 +3414,39 @@ def _translate_region_group_gemini(items):
 
 
 def _translate_region_group_gemini(items):
-    """Translate one group of regions through translate_text (Gemini cloud engine)."""
+    """Translate one group of pending regions via translate_text (Gemini only)."""
     results = []
     for item in items:
-        if not str(item.get("text", "")).strip():
+        # Items are either pending tuples (index, line, context) or plain dicts
+        # from the request path.
+        if isinstance(item, tuple):
+            _index, line, context = item
+            payload = {
+                "text": line.get("text", ""),
+                "chapter_title": "",
+                "region_type": line.get("region_type", "speech_bubble"),
+                "chapter_id": None,
+                "region_index": _index,
+                "bubble_id": line.get("bubble_id"),
+                "work_scope": line.get("work_scope"),
+                "glossary_scope": line.get("glossary_scope"),
+                "context": context,
+            }
+        else:
+            payload = item
+        if not str(payload.get("text", "")).strip():
             results.append("")
             continue
         results.append(translate_text(
-            str(item.get("text", "")),
-            chapter_title=item.get("chapter_title", ""),
-            page_index=item.get("page_index"),
-            context=item.get("context", ""),
-            chapter_id=item.get("chapter_id"),
-            region_index=item.get("region_index"),
-            bubble_id=item.get("bubble_id"),
-            work_scope=item.get("work_scope"),
-            glossary_scope=item.get("glossary_scope"),
+            str(payload.get("text", "")),
+            chapter_title=payload.get("chapter_title", ""),
+            page_index=payload.get("page_index"),
+            context=payload.get("context", ""),
+            chapter_id=payload.get("chapter_id"),
+            region_index=payload.get("region_index"),
+            bubble_id=payload.get("bubble_id"),
+            work_scope=payload.get("work_scope"),
+            glossary_scope=payload.get("glossary_scope"),
         ))
     return results
 
