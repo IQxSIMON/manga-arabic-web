@@ -1719,7 +1719,7 @@ def process_local_chapter_page(chapter_id, page_number, time_budget=None):
                 for index, line, context in unit
             ]
             started = time.perf_counter()
-            future = pool.submit(_translate_region_group_with_cloud_fallback, requests_for_unit)
+            future = pool.submit(_translate_region_group_gemini, requests_for_unit)
             in_flight[future] = (unit, started)
 
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="manga-translate") as pool:
@@ -3137,10 +3137,52 @@ def _configure_persistent_chunk_cache(router):
         )
 
 
+def _gemini_translate_single(text, context="", glossary_entries=None):
+    """Translate one region via Gemini, with retry on rate limits."""
+    api_key = _gemini_api_key_from_local_settings()
+    if not api_key:
+        raise RuntimeError("مفتاح Gemini غير مضبوط في إعدادات الخادم؛ لا يمكن الترجمة بدونه.")
+    prompt = (
+        "Translate the provided comic dialogue into natural, literary Arabic. "
+        "Do not translate sound effects, decorative lettering, watermarks, credits, "
+        "isolated UI labels, non-English text, or uncertain crops; return an empty "
+        "Arabic string for those. Translate dialogue, narration, captions, signs, and "
+        "phone text. Return only JSON with shape {\"translation\": string}.\n"
+        + (f"GLOSSARY: {json.dumps(glossary_entries, ensure_ascii=False)}\n" if glossary_entries else "")
+        + (f"CONTEXT: {context}\n" if context else "")
+        + f"TEXT: {text}"
+    )
+    response = None
+    for attempt in range(3):
+        try:
+            response = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json={"contents": [{"parts": [{"text": prompt}]}],
+                      "generationConfig": {"responseMimeType": "application/json", "temperature": 0.25}},
+                timeout=(10, 60),
+            )
+            if response.ok or response.status_code != 429:
+                break
+            time.sleep(min(20.0, 5.0 * (2 ** attempt)))
+        except requests.RequestException:
+            if attempt == 2:
+                response = None
+            time.sleep(2.0)
+    if response is None or not response.ok:
+        raise RuntimeError("تعذرت الترجمة السحابية عبر Gemini.")
+    try:
+        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        decoded = json.loads(raw)
+        return clean_translation_output(str(decoded.get("translation", "")))
+    except (KeyError, IndexError, TypeError, ValueError):
+        raise RuntimeError("وصل رد Gemini لكن تنسيقه غير صالح.")
+
+
 def translate_text(text, chapter_title="", page_index=None, line_mode=False, context="",
                    chapter_id=None, region_index=None, bubble_id=None, work_scope=None,
                    glossary_scope=None, _pretranslated=None):
-    """Translate locally; model initialization is lazy to keep startup lightweight."""
+    """Translate via the cloud Gemini engine; model initialization is lazy."""
     global TRANSLATOR, QWEN_TRANSLATOR, QWEN_PROOFREADER, MADLAD_TRANSLATOR, BALANCED_TRANSLATOR
     if not text.strip():
         return ""
@@ -3178,47 +3220,16 @@ def translate_text(text, chapter_title="", page_index=None, line_mode=False, con
                 ))
             return "\n".join(translations)
         term_scope = glossary_scope or work_scope
-        # New-model routes should translate the current utterance with its
-        # dialogue context instead of returning a saved or hand-authored
-        # sentence. Glossary terms are passed as context to the model below.
-        # The phrase table remains only for explicitly selected legacy engines.
-        reviewed_phrase = (
-            translate_reviewed_phrase(text)
-            if CURRENT_TRANSLATION_ENGINE in {"opus", "madlad", "qwen3"}
-            else None
-        )
-        if reviewed_phrase is not None and has_arabic_letters(reviewed_phrase):
-            _record_translation_event("translation_result", text, reviewed_phrase, "reviewed_phrase_memory",
-                                      chapter_id=chapter_id, chapter_title=chapter_title,
-                                      page_index=page_index, region_index=region_index,
-                                      bubble_id=bubble_id, context=context)
-            return reviewed_phrase
-        proofreader_active = ENABLE_LOCAL_PROOFREADER and CURRENT_TRANSLATION_ENGINE == "opus"
-        if CURRENT_TRANSLATION_ENGINE in {
-            "balanced_auto", "index_translate_9b", "translategemma_4b"
-        }:
-            glossary_entries = _model_glossary_entries(text, term_scope)
-        else:
-            glossary_entries = matching_glossary_entries(text, work_scope=term_scope)
-        # A dialogue line can legitimately translate differently depending on
-        # the preceding bubbles (gender, referents, sarcasm). Keep memories
-        # from leaking across distinct conversational contexts.
-        if CURRENT_TRANSLATION_ENGINE in {
-            "balanced_auto", "index_translate_9b", "translategemma_4b"
-        }:
-            get_balanced_translator()
-            _configure_persistent_chunk_cache(BALANCED_TRANSLATOR)
-            selected_engine_id = (
-                BALANCED_TRANSLATOR.preferred_engine_id()
-                if CURRENT_TRANSLATION_ENGINE == "balanced_auto"
-                else CURRENT_TRANSLATION_ENGINE
-            )
-        else:
-            selected_engine_id = CURRENT_TRANSLATION_ENGINE
+        # The cloud Gemini engine replaces all local models: translate the
+        # current utterance with its dialogue context. Glossary terms are
+        # passed as context to the model below.
+        reviewed_phrase = None
+        glossary_entries = matching_glossary_entries(text, work_scope=term_scope)
+        selected_engine_id = "gemini_cloud"
         memory_scope = _translation_memory_scope(
             text, selected_engine_id, chapter_title=chapter_title, context=context,
             work_scope=work_scope, glossary_entries=glossary_entries,
-            proofreader_active=proofreader_active,
+            proofreader_active=False,
         )
         remembered = library_store.get_memory(memory_scope, text)
         if remembered is not None:
@@ -3230,116 +3241,23 @@ def translate_text(text, chapter_title="", page_index=None, line_mode=False, con
                                       bubble_id=bubble_id, context=context,
                                       metadata={"scope": memory_scope})
             return remembered
-        if remembered is not None:
-            app.logger.warning("Ignoring a translation memory entry without Arabic letters")
-        if CURRENT_TRANSLATION_ENGINE in {
-            "balanced_auto", "index_translate_9b", "translategemma_4b"
-        }:
-            model_context = build_model_context(context, glossary_entries)
-            if _pretranslated is not None:
-                if CURRENT_TRANSLATION_ENGINE != "index_translate_9b":
-                    raise ValueError("Pretranslated batch results are accepted only for Index.")
-                translated = clean_translation_output(_pretranslated)
-                if not _is_usable_arabic_translation(translated):
-                    raise RuntimeError("The validated Index batch item is not usable Arabic.")
-            elif CURRENT_TRANSLATION_ENGINE == "balanced_auto":
-                translated = BALANCED_TRANSLATOR.translate(text, context=model_context)
-            else:
-                translated = BALANCED_TRANSLATOR.translate_with(
-                    CURRENT_TRANSLATION_ENGINE, text, context=model_context
-                )
-            actual_engine = BALANCED_TRANSLATOR.last_engine_id
-            actual_model = BALANCED_TRANSLATOR.last_model_name
-            if translated:
-                actual_scope = _translation_memory_scope(
-                    text, actual_engine, chapter_title=chapter_title, context=context,
-                    work_scope=work_scope, glossary_entries=glossary_entries,
-                    proofreader_active=proofreader_active,
-                )
-                actual_recipe_version = translation_recipe_signature(actual_engine)
-                library_store.save_memory(actual_scope, text, translated)
-                _record_translation_event(
-                    "engine_output", text, translated, actual_engine,
-                    chapter_id=chapter_id, chapter_title=chapter_title,
-                    page_index=page_index, region_index=region_index,
-                    bubble_id=bubble_id, context=context, model_name=actual_model,
-                    quantization="INT8" if actual_engine == "opus" else "Q4_K_M",
-                    prompt_version=(
-                        (INDEX_BATCH_PROMPT_VERSION if _pretranslated is not None else INDEX_PROMPT_VERSION)
-                        if actual_engine == "index_translate_9b"
-                        else TRANSLATEGEMMA_PROMPT_VERSION if actual_engine == "translategemma_4b"
-                        else None
-                    ),
-                    metadata={"translation_policy": "index_only" if CURRENT_TRANSLATION_ENGINE == "index_translate_9b" else "balanced_auto",
-                              "translation_mode": "numbered_batch" if _pretranslated is not None else "single_region",
-                              "glossary_entries": glossary_entries,
-                              "recipe_version": actual_recipe_version},
-                )
-            return translated
-        if CURRENT_TRANSLATION_ENGINE == "qwen3":
-            if QWEN_TRANSLATOR is None:
-                QWEN_TRANSLATOR = LlamaCppTranslator()
-            translated = QWEN_TRANSLATOR.translate(text, context=build_model_context(context, glossary_entries))
-            if translated:
-                library_store.save_memory(memory_scope, text, translated)
-                _record_translation_event("engine_output", text, translated, "qwen3",
-                                          chapter_id=chapter_id, chapter_title=chapter_title,
-                                          page_index=page_index, region_index=region_index,
-                                          bubble_id=bubble_id, context=context,
-                                          model_name=Path(getattr(QWEN_TRANSLATOR, "model_path", "Qwen3 local model")).name,
-                                          quantization="as-configured")
-            return translated
-        if CURRENT_TRANSLATION_ENGINE == "madlad":
-            if MADLAD_TRANSLATOR is None:
-                MADLAD_TRANSLATOR = MadladTranslator()
-            translated = MADLAD_TRANSLATOR.translate(text, context=context)
-            if translated:
-                library_store.save_memory(memory_scope, text, translated)
-                _record_translation_event("engine_output", text, translated, "madlad",
-                                          chapter_id=chapter_id, chapter_title=chapter_title,
-                                          page_index=page_index, region_index=region_index,
-                                          bubble_id=bubble_id, context=context,
-                                          model_name=str(getattr(MADLAD_TRANSLATOR, "model_path", "MADLAD-400")),
-                                          quantization="as-configured")
-            return translated
-        if TRANSLATOR is None:
-            TRANSLATOR = TranslatorEngine()
-        translated = TRANSLATOR.translate(text)
-        opus_draft = translated
+        translated = _gemini_translate_single(text, context, glossary_entries)
         if translated:
-            _record_translation_event("engine_output", text, translated, "opus",
-                                      chapter_id=chapter_id, chapter_title=chapter_title,
-                                      page_index=page_index, region_index=region_index,
-                                      bubble_id=bubble_id, context=context,
-                                      model_name="OPUS-MT en-ar ONNX INT8", quantization="INT8")
-        if translated and proofreader_active:
-            try:
-                if QWEN_PROOFREADER is None:
-                    QWEN_PROOFREADER = LlamaCppTranslator(
-                        model_path=DEFAULT_PROOFREADER_MODEL,
-                        port=9932,
-                        startup_timeout=300,
-                    )
-                edited = QWEN_PROOFREADER.proofread(
-                    text, translated, context=build_model_context(context, glossary_entries)
-                )
-                has_arabic = bool(edited) and any("\u0600" <= char <= "\u06ff" for char in edited)
-                reasonable_length = len(edited) <= max(60, len(translated) * 2)
-                if has_arabic and reasonable_length:
-                    translated = edited
-                    _record_translation_event("engine_output", text, edited, "qwen4b_proofreader",
-                                              chapter_id=chapter_id, chapter_title=chapter_title,
-                                              page_index=page_index, region_index=region_index,
-                                              bubble_id=bubble_id, context=context,
-                                              model_name=Path(getattr(QWEN_PROOFREADER, "model_path", "Qwen local proofreader")).name,
-                                              quantization="as-configured",
-                                              metadata={"draft_engine": "opus", "draft": opus_draft})
-                else:
-                    app.logger.warning("Qwen proofreader output failed validation; kept OPUS draft.")
-            except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
-                app.logger.warning("Qwen proofreader failed; kept OPUS draft: %s", exc)
-        if translated:
-            library_store.save_memory(memory_scope, text, translated)
+            actual_scope = _translation_memory_scope(
+                text, selected_engine_id, chapter_title=chapter_title, context=context,
+                work_scope=work_scope, glossary_entries=glossary_entries,
+                proofreader_active=False,
+            )
+            library_store.save_memory(actual_scope, text, translated)
+            _record_translation_event(
+                "engine_output", text, translated, selected_engine_id,
+                chapter_id=chapter_id, chapter_title=chapter_title,
+                page_index=page_index, region_index=region_index,
+                bubble_id=bubble_id, context=context, model_name="gemini-3.1-flash-lite",
+                metadata={"translation_policy": "cloud_only",
+                          "translation_mode": "single_region",
+                          "glossary_entries": glossary_entries},
+            )
         return translated
     except (OSError, ValueError, RuntimeError) as exc:
         raise RuntimeError(f"تعذرت الترجمة المحلية: {exc}") from exc
@@ -3415,18 +3333,26 @@ def _translate_index_region_group(items):
 
 
 def _translate_region_group_gemini(items):
-    """Cloud fallback for one page-translation unit when the local model is missing."""
+    """Translate one group of regions via Gemini (the only cloud engine)."""
     api_key = _gemini_api_key_from_local_settings()
     if not api_key:
-        raise RuntimeError("مفتاح Gemini غير مضبوط في إعدادات الخادم، ومحرك الترجمة المحلي غير متاح.")
-    normalized = [
-        {"id": str(index), "text": item["text"],
-         "type": item.get("region_type", "speech_bubble")}
-        for index, item in enumerate(items, 1)
-        if str(item.get("text", "")).strip()
-    ]
+        raise RuntimeError("مفتاح Gemini غير مضبوط في إعدادات الخادم؛ لا يمكن الترجمة بدونه.")
+    normalized = []
+    remembered = {}
+    for index, item in enumerate(items, 1):
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        scope = item.get("work_scope") or item.get("chapter_title") or "_default"
+        cached = library_store.get_memory(scope, text)
+        cached = clean_translation_output(cached) if cached else None
+        if cached and has_arabic_letters(cached):
+            remembered[index] = cached
+            continue
+        normalized.append({"id": str(index), "text": text,
+                           "type": item.get("region_type", "speech_bubble")})
     if not normalized:
-        return ["" for _ in items]
+        return [remembered.get(index, "") for index in range(1, len(items) + 1)]
     prompt = (
         "Translate the provided comic dialogue into natural, literary Arabic. "
         "Do not translate sound effects, decorative lettering, watermarks, credits, "
@@ -3455,7 +3381,7 @@ def _translate_region_group_gemini(items):
                 response = None
             time.sleep(2.0)
     if response is None or not response.ok:
-        raise RuntimeError("تعذرت الترجمة السحابية البديلة عبر Gemini.")
+        raise RuntimeError("تعذرت الترجمة السحابية عبر Gemini.")
     try:
         raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
         decoded = json.loads(raw)
@@ -3465,25 +3391,42 @@ def _translate_region_group_gemini(items):
             if isinstance(item, dict) and isinstance(item.get("translation"), str)
         }
     except (KeyError, IndexError, TypeError, ValueError):
-        raise RuntimeError("وصل رد Gemini البديل لكن تنسيقه غير صالح.")
+        raise RuntimeError("وصل رد Gemini لكن تنسيقه غير صالح.")
     results = []
     for index, item in enumerate(items, 1):
+        if index in remembered:
+            results.append(remembered[index])
+            continue
         if not str(item.get("text", "")).strip():
             results.append("")
         else:
             translated = mapped.get(str(index), "")
             results.append(translated if has_arabic_letters(translated) else "")
+            if results[-1]:
+                scope = item.get("work_scope") or item.get("chapter_title") or "_default"
+                library_store.save_memory(scope, str(item.get("text", "")).strip(), results[-1])
     return results
 
 
-def _translate_region_group_with_cloud_fallback(items):
-    try:
-        return _translate_index_region_group(items)
-    except RuntimeError as exc:
-        message = str(exc)
-        if "unavailable" in message or "غير موجود" in message or "غير متاح" in message:
-            return _translate_region_group_gemini(items)
-        raise
+def _translate_region_group_gemini(items):
+    """Translate one group of regions through translate_text (Gemini cloud engine)."""
+    results = []
+    for item in items:
+        if not str(item.get("text", "")).strip():
+            results.append("")
+            continue
+        results.append(translate_text(
+            str(item.get("text", "")),
+            chapter_title=item.get("chapter_title", ""),
+            page_index=item.get("page_index"),
+            context=item.get("context", ""),
+            chapter_id=item.get("chapter_id"),
+            region_index=item.get("region_index"),
+            bubble_id=item.get("bubble_id"),
+            work_scope=item.get("work_scope"),
+            glossary_scope=item.get("glossary_scope"),
+        ))
+    return results
 
 
 def set_translation_engine(engine_name):
@@ -3961,7 +3904,7 @@ def translate_page():
                     current_region_started_at=time.time(),
                 )
                 try:
-                    outputs = _translate_index_region_group(unit)
+                    outputs = _translate_region_group_gemini(unit)
                     if len(outputs) != len(unit):
                         raise RuntimeError("The translation engine returned a mismatched region count.")
                 except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
