@@ -1674,7 +1674,7 @@ loadBtn.addEventListener("click", async () => {
         button.disabled = true;
         button.textContent = "جارٍ تحميل الصفحة…";
         result.textContent = "جارٍ تنفيذ OCR والترجمة...";
-        const jobId = crypto.randomUUID().replaceAll("-", "").toLowerCase();
+        const jobId = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`).replaceAll("-", "").toLowerCase();
         let progressPollActive = false;
         const progressTimer = window.setInterval(async () => {
           if (progressPollActive) return;

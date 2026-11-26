@@ -6,11 +6,23 @@ const pagesBox=document.getElementById("pages");
 let busy=false;
 let previewObjectUrls=[];
 const say=text=>{statusBox.textContent=text||""};
-async function jsonPost(path,payload){
-  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-  const data=await response.json().catch(()=>{throw new Error("انقطع الخادم أثناء المعالجة (تجاوز حد الوقت). أعد المحاولة وسيُستكمل من حيث توقّف.")});
-  if(!response.ok)throw new Error(data.error||"تعذرت معالجة الطلب.");
-  return data;
+const makeJobId=()=>(crypto.randomUUID?crypto.randomUUID():`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`).replaceAll("-","").toLowerCase();
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function jsonPost(path,payload,{retries=2}={}){
+  for(let attempt=0;;attempt+=1){
+    try{
+      const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const data=await response.json().catch(()=>{throw Object.assign(new Error("انقطع الخادم أثناء المعالجة (تجاوز حد الوقت). أعد المحاولة وسيُستكمل من حيث توقّف."),{transient:true})});
+      if(!response.ok){
+        if(response.status>=500&&attempt<retries)throw Object.assign(new Error(data.error||"خطأ مؤقت من الخادم."),{transient:true});
+        throw new Error(data.error||"تعذرت معالجة الطلب.");
+      }
+      return data;
+    }catch(error){
+      if(error.transient&&attempt<retries){await sleep(1200*(attempt+1));continue}
+      throw error;
+    }
+  }
 }
 async function processChapter(){
   if(busy)return;
@@ -29,7 +41,7 @@ async function processChapter(){
     const pagesWithRegions=[];const allRegions=[];let detectionSeconds=0;
     const detectPage=async(index)=>{
       const page=chapter.pages[index];
-      const jobId=crypto.randomUUID().replaceAll("-","").toLowerCase();
+      const jobId=makeJobId();
       const ocr=await jsonPost("/api/translate",{image:page.image,referer:url,chapter_title:chapter.title,
         page_index:page.index,job_id:jobId,ocr_only:true,cloud_ocr:true,reading_layout:"vertical",
         series_type:"manhwa",reading_direction:"ltr"});
@@ -64,6 +76,11 @@ async function processChapter(){
     }
     if(!translated||translated.partial)throw new Error("تعذّر إكمال الترجمة ضمن الوقت المتاح. أعد المحاولة وسيُستكمل من حيث توقّف.");
     const resultById=new Map((translated.translations||[]).map(item=>[item.id,item]));
+    const appendOriginalImage=(page,label)=>{
+      const image=document.createElement("img");image.className="page";
+      image.alt=`الصفحة الأصلية ${label+1}`;image.loading="lazy";image.decoding="async";
+      image.src=page.image;pagesBox.append(image);
+    };
     let shown=0;let skipped=0;
     const RENDER_CONCURRENCY=4;
     for(let start=0;start<pagesWithRegions.length;start+=RENDER_CONCURRENCY){
@@ -77,16 +94,28 @@ async function processChapter(){
             content_category:result.content_category||"",translated:result.translated||""};
         }).filter(region=>region.translated&&/[\u0600-\u06FF]/.test(region.translated));
         const skippedCount=regions.length-renderRegions.length;
-        if(!renderRegions.length)return {skipped:skippedCount,shown:0};
-        const rendered=await jsonPost("/api/translate/render",{image:page.image,referer:url,regions:renderRegions,reading_layout:"vertical"});
-        if(!rendered.rendered_regions)return {skipped:skippedCount+renderRegions.length,shown:0};
-        const previewResponse=await fetch(rendered.preview_url);
-        if(!previewResponse.ok)throw new Error(`تعذر تحميل معاينة الصفحة ${start+offset+1}.`);
-        const previewUrl=URL.createObjectURL(await previewResponse.blob());previewObjectUrls.push(previewUrl);
-        const image=document.createElement("img");image.className="page";
-        image.alt=`الصفحة العربية ${start+offset+1}`;image.loading="lazy";image.decoding="async";
-        image.src=previewUrl;pagesBox.append(image);
-        return {skipped:skippedCount,shown:1};
+        if(!renderRegions.length){
+          appendOriginalImage(page,start+offset);
+          return {skipped:skippedCount,shown:0};
+        }
+        try{
+          const rendered=await jsonPost("/api/translate/render",{image:page.image,referer:url,regions:renderRegions,reading_layout:"vertical"});
+          if(!rendered.rendered_regions){
+            appendOriginalImage(page,start+offset);
+            return {skipped:skippedCount+renderRegions.length,shown:0};
+          }
+          const previewResponse=await fetch(rendered.preview_url);
+          if(!previewResponse.ok)throw new Error(`تعذر تحميل معاينة الصفحة ${start+offset+1}.`);
+          const previewUrl=URL.createObjectURL(await previewResponse.blob());previewObjectUrls.push(previewUrl);
+          const image=document.createElement("img");image.className="page";
+          image.alt=`الصفحة العربية ${start+offset+1}`;image.loading="lazy";image.decoding="async";
+          image.src=previewUrl;pagesBox.append(image);
+          return {skipped:skippedCount,shown:1};
+        }catch(error){
+          if(error.message&&error.message.startsWith("تعذر تحميل معاينة"))throw error;
+          appendOriginalImage(page,start+offset);
+          return {skipped:skippedCount,shown:0};
+        }
       }));
       for(const outcome of outcomes){shown+=outcome.shown;skipped+=outcome.skipped}
     }
