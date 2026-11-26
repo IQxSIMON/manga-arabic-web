@@ -220,8 +220,9 @@ MADLAD_TRANSLATOR = None
 BALANCED_TRANSLATOR = None
 ENABLE_LOCAL_PROOFREADER = os.getenv("MANGA_ENABLE_LOCAL_PROOFREADER", "0").strip().lower() in {"1", "true", "yes", "on"}
 # Vertical, English-lettered comic builds use Index as their single exposed translation model.
-CURRENT_TRANSLATION_ENGINE = "index_translate_9b"
+CURRENT_TRANSLATION_ENGINE = "gemini_cloud"
 TRANSLATION_RECIPE_VERSIONS = {
+    "gemini_cloud": f"gemini-3.1:{GENERATION_POLICY_VERSION}",
     "index_translate_9b": f"{INDEX_PROMPT_VERSION}:{INDEX_BATCH_PROMPT_VERSION}:{GENERATION_POLICY_VERSION}",
     "translategemma_4b": f"{TRANSLATEGEMMA_PROMPT_VERSION}:{GENERATION_POLICY_VERSION}",
 }
